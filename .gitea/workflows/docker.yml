@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - 'v0.1.0' 
+      - 'v*.*.*' 
 
 jobs:
   build:
@@ -14,17 +14,21 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      # --- Step 1: Generate Docker Tags and Labels ---
       - name: Extract Docker metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: simonverbois/komga-meta-manager
-          # Define tags based on Git reference:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern=v{{version}}
-            type=sha,prefix=sha-
+            type=sha,format=short
+          
+          labels: |
+            # Add the Git version tag as an OCI version label (e.g., 0.1.0)
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            # Add Git commit SHA as revision label
+            org.opencontainers.image.revision=${{ github.sha }}
             
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
