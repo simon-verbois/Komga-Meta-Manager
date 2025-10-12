@@ -17,10 +17,10 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
   * **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
   * **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
 
-## Example (Before/After)
+## 📷 Example (Before/After)
 
-<img src="images/before.png" alt="Before image - Missing metadata for the series" width="30%">
-<img src="images/after.png" alt="After image - Metadata correctly populated by the tool" width="30%">
+<img src="images/before.png" alt="Before image - Missing metadata for the series" width="38%">
+<img src="images/after.png" alt="After image - Metadata correctly populated by the tool" width="38%">
 
 ## 🚀 Installation and Setup
 
