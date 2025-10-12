@@ -1,0 +1,212 @@
+# Path: src/manga_manager/processor.py
+
+# -*- coding: utf-8 -*-
+"""
+Core processing logic for the Manga Manager.
+"""
+import json
+import logging
+from typing import List, Optional, Dict
+
+from manga_manager.config import AppConfig
+from manga_manager.komga_client import KomgaClient
+from manga_manager.providers import get_provider
+from manga_manager.providers.base import MetadataProvider
+from manga_manager.translators import get_translator, Translator
+from manga_manager.models import KomgaSeries, AniListMedia
+from manga_manager.utils import clean_html
+
+logger = logging.getLogger(__name__)
+
+ANILIST_STATUS_TO_KOMGA = {
+    'RELEASING': 'ONGOING',
+    'FINISHED': 'ENDED',
+    'CANCELLED': 'ABANDONED',
+    'HIATUS': 'HIATUS'
+}
+
+def _print_dry_run_report(processed_count: int, updated_series_report: Dict[str, List[str]]):
+    """Formats and prints a summary report for a dry run."""
+    updated_count = len(updated_series_report)
+    
+    report_lines = [
+        "\n",
+        "================================================================",
+        "                    --- Dry Run Report ---                      ",
+        "================================================================",
+        f"\nSeries Processed: {processed_count}",
+        f"Series to be Updated: {updated_count}\n"
+    ]
+
+    if not updated_series_report:
+        report_lines.append("No changes to be made.")
+    else:
+        for series_name, changes in sorted(updated_series_report.items()):
+            report_lines.append(f"Changes for '{series_name}':")
+            for change in changes:
+                report_lines.append(f"  {change}")
+            report_lines.append("")
+
+    report_lines.append("================================================================")
+    
+    for line in report_lines:
+        logger.info(line)
+
+def choose_best_match(candidates: List[AniListMedia]) -> Optional[AniListMedia]:
+    """Selects the best match from a list of candidates based on popularity."""
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda m: m.popularity, reverse=True)[0]
+
+def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bool:
+    """Helper function to determine if a metadata field should be updated."""
+    if is_locked:
+        return False
+    if config.processing.overwrite_existing:
+        return True
+    return not current_value
+
+def process_libraries(config: AppConfig) -> Optional[Translator]:
+    """
+    Main processing function that iterates through libraries and series.
+    It now returns the translator instance so its cache can be saved.
+    """
+    komga_client = KomgaClient(config.komga)
+    metadata_provider = get_provider(config.provider.name)
+    if not metadata_provider:
+        logger.error(f"Failed to initialize provider '{config.provider.name}'. Aborting.")
+        return None
+
+    translator: Optional[Translator] = None
+    if config.translation and config.translation.enabled:
+        translator = get_translator(config.translation.provider)
+        if translator:
+            logger.info(f"Translation enabled to target language: '{config.translation.target_language}'")
+        else:
+            logger.error("Failed to initialize translator. Translation will be disabled.")
+
+    all_libraries = komga_client.get_libraries()
+    if not all_libraries:
+        logger.error("Could not retrieve libraries from Komga. Aborting.")
+        return translator
+
+    target_libraries = {lib.name: lib.id for lib in all_libraries if lib.name in config.komga.libraries}
+    if not target_libraries:
+        logger.warning("No matching libraries found on Komga server based on your config. Exiting.")
+        return translator
+
+    logger.info(f"Found {len(target_libraries)} target library/libraries to process: {list(target_libraries.keys())}")
+
+    processed_count = 0
+    updated_series_report: Dict[str, List[str]] = {}
+
+    for lib_name, lib_id in target_libraries.items():
+        logger.info(f"--- Processing library: '{lib_name}' (ID: {lib_id}) ---")
+        series_list = komga_client.get_series_in_library(lib_id, lib_name)
+
+        if not series_list:
+            logger.info("No series found in this library.")
+            continue
+
+        for series in series_list:
+            processed_count += 1
+            proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
+            if config.system.dry_run and proposed_changes:
+                updated_series_report[series.name] = proposed_changes
+
+    if config.system.dry_run:
+        _print_dry_run_report(processed_count, updated_series_report)
+
+    if translator and hasattr(translator, 'log_cache_summary'):
+        translator.log_cache_summary()
+        
+    return translator
+
+
+def process_single_series(
+    series: KomgaSeries,
+    config: AppConfig,
+    komga_client: KomgaClient,
+    provider: MetadataProvider,
+    translator: Optional[Translator]
+) -> Optional[List[str]]:
+    """
+    Processes a single Komga series.
+    In dry run mode, it returns a list of proposed changes.
+    In normal mode, it applies changes and returns None.
+    """
+    logger.info(f"--- Processing Series: {series.name} ---")
+
+    candidates = provider.search(series.name)
+    best_match = choose_best_match(candidates)
+
+    if not best_match:
+        logger.warning(f"No suitable match found for '{series.name}' on {type(provider).__name__}.")
+        return None
+
+    logger.info(f"Found best match: '{best_match.title.english or best_match.title.romaji}' (ID: {best_match.id})")
+
+    payload = {}
+    metadata = series.metadata
+    change_descriptions: List[str] = []
+
+    # Summary
+    if should_update_field(metadata.summary, metadata.summary_lock, config):
+        new_summary = clean_html(best_match.description)
+        if new_summary and new_summary != metadata.summary:
+            if translator and config.translation:
+                new_summary = translator.translate(new_summary, config.translation.target_language)
+            payload['summary'] = new_summary
+            change_descriptions.append("- Summary: Will be updated.")
+
+    # Genres
+    if best_match.genres and should_update_field(metadata.genres, metadata.genres_lock, config):
+        translated_genres = set(best_match.genres)
+        if translator and config.translation:
+            translated_genres = {translator.translate(genre, config.translation.target_language) for genre in best_match.genres}
+        if translated_genres != metadata.genres:
+            sorted_genres = sorted(list(translated_genres))
+            payload['genres'] = sorted_genres
+            change_descriptions.append(f"- Genres: Set to {sorted_genres}")
+    
+    # Status
+    if best_match.status and should_update_field(metadata.status, metadata.status_lock, config):
+        new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
+        if new_status and new_status != metadata.status:
+            payload['status'] = new_status
+            change_descriptions.append(f"- Status: Set to '{new_status}'")
+            
+    # Tags
+    if best_match.tags and should_update_field(metadata.tags, metadata.tags_lock, config):
+        extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
+        
+        translated_tags = extracted_tags
+        if translator and config.translation:
+            translated_tags = {translator.translate(tag, config.translation.target_language) for tag in extracted_tags}
+
+        if translated_tags != metadata.tags:
+            sorted_tags = sorted(list(translated_tags))
+            payload['tags'] = sorted_tags
+            change_descriptions.append(f"- Tags: Set to {sorted_tags}")
+
+    # Age Rating
+    if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
+        if metadata.age_rating != 18:
+            payload['ageRating'] = 18
+            change_descriptions.append("- Age Rating: Set to 18 (Adult)")
+    
+    if not payload:
+        logger.info("No metadata changes required for this series.")
+        return None
+
+    if config.system.dry_run:
+        logger.warning(f"[DRY-RUN] Series '{series.name}' has pending changes.")
+        return change_descriptions
+    else:
+        logger.info(f"Updating metadata for '{series.name}' on Komga...")
+        success = komga_client.update_series_metadata(series.id, payload)
+        if success:
+            logger.info(f"Successfully updated metadata for '{series.name}'.")
+        else:
+            logger.error(f"Failed to update metadata for '{series.name}'.")
+        return None

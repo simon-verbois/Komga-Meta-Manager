@@ -1,0 +1,29 @@
+# ================================================================= #
+#             Komga Meta Manager Configuration File                 #
+# ================================================================= #
+
+system:
+  dry_run: true
+  debug: false
+  scheduler:
+    enabled: false
+    run_at: "04:00"
+    
+komga:
+  url: "YOUR_KOMGA_URL" 
+  api_key: "YOUR_API_KEY" 
+  libraries:
+    - "Mangas"
+    - "Manhwa"
+  verify_ssl: true
+
+provider:
+  name: "anilist"
+
+processing:
+  overwrite_existing: true
+
+translation:
+  enabled: true
+  provider: "google"
+  target_language: "fr"
