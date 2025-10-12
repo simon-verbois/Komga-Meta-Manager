@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fsimon-verbois%2FKomga-Meta-Manager&label=Visitors&countColor=26A65B&style=plastic" alt="Visitor Count" height="28"/>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/commits/main"><img src="https://img.shields.io/github/last-commit/simon-verbois/Komga-Meta-Manager?style=plastic" alt="GitHub Last Commit" height="28"/></a>
+</p>
+
 # Komga Meta Manager
 
 An automated tool to enrich your Komga manga series metadata using the AniList API, featuring optional translation and persistent caching.
