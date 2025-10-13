@@ -37,7 +37,7 @@ EOF
         uses: docker/build-push-action@v5
         with: 
           context: .
-          file: ./Dockerfile
+          file: ./Dockerfile 
           push: true
           tags: |
             ${{ vars.LOCAL_GITEA_URL }}/simonverbois/komga-meta-manager:main
