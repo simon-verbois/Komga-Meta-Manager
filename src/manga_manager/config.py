@@ -44,6 +44,7 @@ class ProviderConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
     overwrite_existing: bool = False
+    force_unlock: bool = False
 
 class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""

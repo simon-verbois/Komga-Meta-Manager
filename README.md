@@ -91,6 +91,7 @@ The table below explains every parameter in the `config.yml` file.
 | | **`verify_ssl`** | Boolean | `true` | If set to `false`, disables SSL certificate verification (useful for self-signed certificates, but less secure). |
 | **`provider`** | **`name`** | String | `"anilist"` | The metadata source to use. Currently, only **`anilist`** is supported. |
 | **`processing`** | **`overwrite_existing`** | Boolean | `false` | If **`true`**, fetched metadata will **overwrite** any existing Komga metadata. If **`false`**, it only fills in fields that are currently empty or unlocked. |
+| | **`force_unlock`** | Boolean | `false` | If **`true`**, the script will automatically **unlock** any locked metadata fields in Komga before updating them. This allows for a complete refresh of metadata. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
 | | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
 | | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. |

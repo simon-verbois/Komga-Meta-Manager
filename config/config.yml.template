@@ -22,6 +22,7 @@ provider:
 
 processing:
   overwrite_existing: true
+  force_unlock: false
 
 translation:
   enabled: true

@@ -1,0 +1,29 @@
+# Path: config/translations.yml.template
+
+# This file allows you to define manual translations to override or fix issues
+# with the automatic translation provider.
+# It is optional. If this file (or translations.yml) does not exist, it will be ignored.
+#
+# Simply copy this file to 'translations.yml' and customize it.
+
+# The structure is: target_language_code: { Original Text: Translated Text }
+
+fr:
+  Supernatural: Surnaturel
+  Demons: Démons
+  Medieval: Médiéval
+  Rural: Rural
+  Urban: Urbain
+  Delinquents: Délinquants
+  Heterosexual: Hétérosexual
+  Zombie: Zombie
+  Foreign: Étranger
+  Dragons: Dragons
+  Twins: Jumeaux
+  Orphan: Orphelin
+  # Add other French manual translations here if needed
+  # ex: 'Slice of Life': 'Tranche de vie'
+
+# You can add other languages as well
+# es:
+#   Supernatural: Sobrenatural

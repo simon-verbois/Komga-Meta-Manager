@@ -60,7 +60,7 @@ def choose_best_match(candidates: List[AniListMedia]) -> Optional[AniListMedia]:
 
 def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bool:
     """Helper function to determine if a metadata field should be updated."""
-    if is_locked:
+    if is_locked and not config.processing.force_unlock:
         return False
     if config.processing.overwrite_existing:
         return True
@@ -167,6 +167,8 @@ def process_single_series(
             if translator and config.translation:
                 new_summary = translator.translate(new_summary, config.translation.target_language)
             payload['summary'] = new_summary
+            if metadata.summary_lock and config.processing.force_unlock:
+                payload['summaryLock'] = False
             change_descriptions.append("- Summary: Will be updated.")
 
     # Genres
@@ -177,6 +179,8 @@ def process_single_series(
         if translated_genres != metadata.genres:
             sorted_genres = sorted(list(translated_genres))
             payload['genres'] = sorted_genres
+            if metadata.genres_lock and config.processing.force_unlock:
+                payload['genresLock'] = False
             change_descriptions.append(f"- Genres: Set to {sorted_genres}")
     
     # Status
@@ -184,6 +188,8 @@ def process_single_series(
         new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
         if new_status and new_status != metadata.status:
             payload['status'] = new_status
+            if metadata.status_lock and config.processing.force_unlock:
+                payload['statusLock'] = False
             change_descriptions.append(f"- Status: Set to '{new_status}'")
             
     # Tags
@@ -197,12 +203,16 @@ def process_single_series(
         if translated_tags != metadata.tags:
             sorted_tags = sorted(list(translated_tags))
             payload['tags'] = sorted_tags
+            if metadata.tags_lock and config.processing.force_unlock:
+                payload['tagsLock'] = False
             change_descriptions.append(f"- Tags: Set to {sorted_tags}")
 
     # Age Rating
     if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
         if metadata.age_rating != 18:
             payload['ageRating'] = 18
+            if metadata.age_rating_lock and config.processing.force_unlock:
+                payload['ageRatingLock'] = False
             change_descriptions.append("- Age Rating: Set to 18 (Adult)")
     
     if not payload:

@@ -22,6 +22,7 @@ def setup_logging(debug: bool = False):
         logging.getLogger("gql").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.INFO)
         logging.getLogger("schedule").setLevel(logging.INFO)
+        logging.getLogger("deepl").setLevel(logging.WARNING)
 
 def get_next_run_time():
     """

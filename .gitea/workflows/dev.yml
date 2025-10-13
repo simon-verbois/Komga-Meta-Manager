@@ -12,17 +12,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure Docker for insecure registry
-        run: |
-          mkdir -p ~/.docker
-          echo '{"insecure-registries": ["${{ vars.LOCAL_GITEA_URL }}"]}' > ~/.docker/config.json
-
       - name: Login to local Gitea registry
         run: echo "${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }}" | docker login ${{ vars.LOCAL_GITEA_URL }} -u "${{ secrets.LOCAL_GITEA_REGISTRY_USER }}" --password-stdin
 
       - name: Build, Tag and Push image
         run: |
-          # On définit le nom complet de l'image pour ne pas le répéter
           IMAGE_NAME="${{ vars.LOCAL_GITEA_URL }}/simonverbois/komga-meta-manager"
           
           echo "Building image $IMAGE_NAME:main..."
