@@ -19,22 +19,19 @@ komga:
 
 provider:
   name: "anilist"
-  # Minimum score (0-100) for a fuzzy match to be considered valid.
   min_score: 80
 
 processing:
   overwrite_existing: true
   force_unlock: false
-  # A list of series titles to exclude from processing.
   exclude_series:
     # - "Some Manga Title"
     # - "Another Manga Title"
-  # If true, the script will not process any series that already has a summary.
   skip_series_with_summary: false
 
 translation:
   enabled: true
-  provider: "google" # "google" or "deepl"
+  provider: "deepl"
   target_language: "fr"
   # deepl:
     # api_key: "YOUR_DEEPL_API_KEY"

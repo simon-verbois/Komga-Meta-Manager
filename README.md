@@ -41,40 +41,6 @@ The application is configured using a single YAML file named `config.yml`. It is
 3.  Create the main configuration file, `config/config.yml`, by starting with the example below:
 4.  *(Optional but recommended)* You can also create a file named `config/translations.yml` to define manual translations for specific genres or tags, which overrides the automatic translator.
 
-**`config/config.yml`**
-
-```yaml
-# ================================================================= #
-#             Komga Meta Manager Configuration File                 #
-# ================================================================= #
-
-system:
-  dry_run: true
-  debug: false
-  scheduler:
-    enabled: false
-    run_at: "04:00"
-    
-komga:
-  url: "YOUR_KOMGA_URL" 
-  api_key: "YOUR_API_KEY" 
-  libraries:
-    - "Mangas"
-    - "Manhwa"
-  verify_ssl: true
-
-provider:
-  name: "anilist"
-
-processing:
-  overwrite_existing: true
-
-translation:
-  enabled: true
-  provider: "google"
-  target_language: "fr"
-```
-
 #### Configuration Parameters Explained
 
 The table below explains every parameter in the `config.yml` file.
@@ -96,14 +62,14 @@ The table below explains every parameter in the `config.yml` file.
 | | **`exclude_series`** | List of Strings | `[]` | A list of exact series titles to **exclude** from processing. |
 | | **`skip_series_with_summary`** | Boolean | `false` | If **`true`**, the script will **skip** any series that already has a summary. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
-| | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
-| | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. |
+| | **`provider`** | String | `"deepl"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
+| | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. You can get one [here](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans). |
 | | **`target_language`** | String | `"fr"` | The ISO 639-1 code for the language you want to translate to (e.g., `fr`, `en`, `es`). |
 
 
 ### 2\. Run with Docker Compose
 
-1.  In the root directory of your project (the one containing the `config` folder), create the `docker-compose.yml` file:
+1.  In the root directory of your project (the one containing the `config` folder), create the `docker-compose.yml` file with the following content:
 
 **`docker-compose.yml`**
 
@@ -121,18 +87,15 @@ services:
       - ./config:/config
 ```
 
-2.  Run the container:
-
-<!-- end list -->
+2.  Start the container in detached mode:
 
 ```bash
 docker-compose up -d
 ```
 
-3.  You can optionnaly run it with docker cli
-
+*To run the job once and remove the container afterwards (e.g., for testing or manual runs without scheduling), use:*
 ```bash
-docker run --rm -v "$(pwd)/config:/config" -e "TZ=Europe/Brussels" simonverbois/komga-meta-manager
+docker-compose run --rm komga-meta-manager
 ```
 
 ### 3\. Verification
@@ -142,6 +105,10 @@ Check the logs to ensure the application is running correctly and connecting to 
 ```bash
 docker logs komga-meta-manager -f
 ```
+
+## 📜 Changelog
+
+Check the [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and versions.
 
 ## ⚙️ Resources
 
