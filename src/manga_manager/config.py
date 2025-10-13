@@ -40,11 +40,14 @@ class KomgaConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """Pydantic model for metadata provider settings."""
     name: str = "anilist"
+    min_score: int = 80
 
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
     overwrite_existing: bool = False
     force_unlock: bool = False
+    exclude_series: List[str] = Field(default_factory=list)
+    skip_series_with_summary: bool = False
 
 class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""

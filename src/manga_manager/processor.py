@@ -15,6 +15,7 @@ from manga_manager.providers.base import MetadataProvider
 from manga_manager.translators import get_translator, Translator
 from manga_manager.models import KomgaSeries, AniListMedia
 from manga_manager.utils import clean_html
+from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +53,38 @@ def _print_dry_run_report(processed_count: int, updated_series_report: Dict[str,
     for line in report_lines:
         logger.info(line)
 
-def choose_best_match(candidates: List[AniListMedia]) -> Optional[AniListMedia]:
-    """Selects the best match from a list of candidates based on popularity."""
+def choose_best_match(series_title: str, candidates: List[AniListMedia], min_score: int = 80) -> Optional[AniListMedia]:
+    """
+    Selects the best match from a list of candidates.
+    It first filters candidates by a minimum fuzzy match score, then sorts by score,
+    and finally by popularity as a tie-breaker.
+    """
     if not candidates:
         return None
-    return sorted(candidates, key=lambda m: m.popularity, reverse=True)[0]
+
+    scored_candidates = []
+    for candidate in candidates:
+        titles_to_check = [candidate.title.english, candidate.title.romaji]
+        titles_to_check = [t for t in titles_to_check if t]  # Filter out None titles
+        
+        if not titles_to_check:
+            continue
+
+        # Calculate the highest score among the available titles
+        score = max(fuzz.ratio(series_title.lower(), t.lower()) for t in titles_to_check)
+        
+        if score >= min_score:
+            scored_candidates.append({'candidate': candidate, 'score': score})
+
+    if not scored_candidates:
+        return None
+
+    # Sort by score (desc), then by popularity (desc) as a tie-breaker
+    best = sorted(scored_candidates, key=lambda x: (x['score'], x['candidate'].popularity), reverse=True)[0]
+    
+    logger.info(f"Found {len(scored_candidates)} candidates with score >= {min_score}. Best match: '{best['candidate'].title.english or best['candidate'].title.romaji}' with score {best['score']}.")
+    
+    return best['candidate']
 
 def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bool:
     """Helper function to determine if a metadata field should be updated."""
@@ -119,6 +147,14 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
             continue
 
         for series in series_list:
+            if series.name in config.processing.exclude_series:
+                logger.info(f"Skipping series '{series.name}' as it is in the exclude list.")
+                continue
+            
+            if config.processing.skip_series_with_summary and series.metadata.summary:
+                logger.info(f"Skipping series '{series.name}' as it already has a summary.")
+                continue
+
             processed_count += 1
             proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
             if config.system.dry_run and proposed_changes:
@@ -211,7 +247,7 @@ def process_single_series(
     logger.info(f"--- Processing Series: {series.name} ---")
 
     candidates = provider.search(series.name)
-    best_match = choose_best_match(candidates)
+    best_match = choose_best_match(series.name, candidates, config.provider.min_score)
 
     if not best_match:
         logger.warning(f"No suitable match found for '{series.name}' on {type(provider).__name__}.")
