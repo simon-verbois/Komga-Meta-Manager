@@ -79,7 +79,17 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
 
     translator: Optional[Translator] = None
     if config.translation and config.translation.enabled:
-        translator = get_translator(config.translation.provider)
+        translator_provider = config.translation.provider.lower()
+        translator_kwargs = {}
+        if translator_provider == 'deepl':
+            if config.translation.deepl:
+                translator_kwargs['config'] = config.translation.deepl
+            else:
+                logger.error("DeepL provider is selected but its configuration is missing.")
+                return None
+        
+        translator = get_translator(translator_provider, **translator_kwargs)
+
         if translator:
             logger.info(f"Translation enabled to target language: '{config.translation.target_language}'")
         else:

@@ -11,7 +11,7 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 
   * **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, and **Tags** for your Komga series from **AniList**.
   * **Targeted Processing:** Only processes libraries you specify in the configuration.
-  * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language (e.g., French, English) using **Google Translate**.
+  * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
   * **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
   * **Persistent Caching:** Avoid repeated API calls and speed up processing with a persistent translation cache.
   * **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
@@ -92,7 +92,8 @@ The table below explains every parameter in the `config.yml` file.
 | **`provider`** | **`name`** | String | `"anilist"` | The metadata source to use. Currently, only **`anilist`** is supported. |
 | **`processing`** | **`overwrite_existing`** | Boolean | `false` | If **`true`**, fetched metadata will **overwrite** any existing Komga metadata. If **`false`**, it only fills in fields that are currently empty or unlocked. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
-| | **`provider`** | String | `"google"` | The translation service to use. Currently, only **`google`** is supported. |
+| | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
+| | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. |
 | | **`target_language`** | String | `"fr"` | The ISO 639-1 code for the language you want to translate to (e.g., `fr`, `en`, `es`). |
 
 
@@ -143,6 +144,3 @@ docker logs komga-meta-manager -f
 [Dockerhub Repository](https://hub.docker.com/r/simonverbois/komga-meta-manager)
 
 [Komga Homepage](https://komga.org/)
-
-
-

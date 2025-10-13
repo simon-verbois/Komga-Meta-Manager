@@ -45,11 +45,16 @@ class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
     overwrite_existing: bool = False
 
+class DeepLConfig(BaseModel):
+    """Pydantic model for DeepL specific settings."""
+    api_key: str = Field(..., min_length=1)
+
 class TranslationConfig(BaseModel):
     """Pydantic model for translation settings."""
     enabled: bool = True
     provider: str = "google"
     target_language: str = "en"
+    deepl: Optional[DeepLConfig] = None
 
 class AppConfig(BaseModel):
     """Root Pydantic model for the application configuration."""

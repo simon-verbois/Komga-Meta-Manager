@@ -25,5 +25,7 @@ processing:
 
 translation:
   enabled: true
-  provider: "google"
+  provider: "google" # "google" or "deepl"
   target_language: "fr"
+  # deepl:
+    # api_key: "YOUR_DEEPL_API_KEY"
