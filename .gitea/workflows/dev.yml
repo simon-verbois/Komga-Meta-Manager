@@ -72,7 +72,7 @@ jobs:
         with:
           registry: ${{ vars.LOCAL_GITEA_URL }}:30040
           username: ${{ secrets.LOCAL_GITEA_REGISTRY_USER }}
-          password: ${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }}
+          password: ${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }} 
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
