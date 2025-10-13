@@ -15,7 +15,7 @@ jobs:
       - name: Allow insecure registry for buildx
         run: |
           mkdir -p /etc/docker
-          echo '{ "insecure-registries": ["${{ vars.LOCAL_GITEA_URL }}:30040"] }' > /etc/docker/daemon.json
+          echo '{ "insecure-registries": ["${{ vars.LOCAL_GITEA_URL }}"] }' > /etc/docker/daemon.json
           cat /etc/docker/daemon.json
 
       - name: Set up Docker Buildx
@@ -24,7 +24,7 @@ jobs:
       - name: Login to local Gitea registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.LOCAL_GITEA_URL }}:30040
+          registry: ${{ vars.LOCAL_GITEA_URL }}
           username: ${{ secrets.LOCAL_GITEA_REGISTRY_USER }}
           password: ${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }} 
 
@@ -35,5 +35,5 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ vars.LOCAL_GITEA_URL }}:30040/simonverbois/komga-meta-manager:main
-            ${{ vars.LOCAL_GITEA_URL }}:30040/simonverbois/komga-meta-manager:latest
+            ${{ vars.LOCAL_GITEA_URL }}/simonverbois/komga-meta-manager:main
+            ${{ vars.LOCAL_GITEA_URL }}/simonverbois/komga-meta-manager:latest
