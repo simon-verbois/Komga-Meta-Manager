@@ -48,9 +48,5 @@ jobs:
         run: |
           git config --global user.name "Gitea CI"
           git config --global user.email "ci@gitea.local"
-          
-          # Ajouter le remote GitHub (HTTPS avec token)
-          git remote add github "https://x-access-token:${GITHUBPAT_TOKEN}@github.com/<TON_UTILISATEUR>/<TON_REPO>.git"
-
-          # S’assurer qu’on pousse tout (tags inclus)
+          git remote add github "https://x-access-token:${GITHUBPAT_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
           git push github HEAD:main --tags
