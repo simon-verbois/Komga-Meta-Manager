@@ -12,14 +12,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Allow insecure registry for buildx
+      - name: Configure Docker and BuildKit for insecure registry
         run: |
-          mkdir -p /etc/docker
-          echo '{ "insecure-registries": ["${{ vars.LOCAL_GITEA_URL }}"] }' > /etc/docker/daemon.json
-          cat /etc/docker/daemon.json
+          # 1. Configure the Docker client
+          mkdir -p ~/.docker
+          echo '{"insecure-registries": ["${{ vars.LOCAL_GITEA_URL }}"]}' > ~/.docker/config.json
+          
+          # 2. Configure the BuildKit builder
+          cat <<EOF > /tmp/buildkitd.toml
+[registry."${{ vars.LOCAL_GITEA_URL }}"]
+  http = true
+  insecure = true
+EOF
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          config: /tmp/buildkitd.toml
 
       - name: Login to local Gitea registry
         run: echo "${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }}" | docker login ${{ vars.LOCAL_GITEA_URL }} -u "${{ secrets.LOCAL_GITEA_REGISTRY_USER }}" --password-stdin
