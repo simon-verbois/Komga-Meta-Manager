@@ -133,6 +133,69 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
     return translator
 
 
+def _update_summary(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    metadata = series.metadata
+    if should_update_field(metadata.summary, metadata.summary_lock, config):
+        new_summary = clean_html(best_match.description)
+        if new_summary and new_summary != metadata.summary:
+            if translator and config.translation:
+                new_summary = translator.translate(new_summary, config.translation.target_language)
+            payload['summary'] = new_summary
+            if metadata.summary_lock and config.processing.force_unlock:
+                payload['summaryLock'] = False
+            return "- Summary: Will be updated."
+    return None
+
+def _update_genres(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    metadata = series.metadata
+    if best_match.genres and should_update_field(metadata.genres, metadata.genres_lock, config):
+        translated_genres = set(best_match.genres)
+        if translator and config.translation:
+            translated_genres = {translator.translate(genre, config.translation.target_language) for genre in best_match.genres}
+        if translated_genres != metadata.genres:
+            sorted_genres = sorted(list(translated_genres))
+            payload['genres'] = sorted_genres
+            if metadata.genres_lock and config.processing.force_unlock:
+                payload['genresLock'] = False
+            return f"- Genres: Set to {sorted_genres}"
+    return None
+
+def _update_status(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
+    metadata = series.metadata
+    if best_match.status and should_update_field(metadata.status, metadata.status_lock, config):
+        new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
+        if new_status and new_status != metadata.status:
+            payload['status'] = new_status
+            if metadata.status_lock and config.processing.force_unlock:
+                payload['statusLock'] = False
+            return f"- Status: Set to '{new_status}'"
+    return None
+
+def _update_tags(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    metadata = series.metadata
+    if best_match.tags and should_update_field(metadata.tags, metadata.tags_lock, config):
+        extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
+        translated_tags = extracted_tags
+        if translator and config.translation:
+            translated_tags = {translator.translate(tag, config.translation.target_language) for tag in extracted_tags}
+        if translated_tags != metadata.tags:
+            sorted_tags = sorted(list(translated_tags))
+            payload['tags'] = sorted_tags
+            if metadata.tags_lock and config.processing.force_unlock:
+                payload['tagsLock'] = False
+            return f"- Tags: Set to {sorted_tags}"
+    return None
+
+def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
+    metadata = series.metadata
+    if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
+        if metadata.age_rating != 18:
+            payload['ageRating'] = 18
+            if metadata.age_rating_lock and config.processing.force_unlock:
+                payload['ageRatingLock'] = False
+            return "- Age Rating: Set to 18 (Adult)"
+    return None
+
 def process_single_series(
     series: KomgaSeries,
     config: AppConfig,
@@ -157,64 +220,20 @@ def process_single_series(
     logger.info(f"Found best match: '{best_match.title.english or best_match.title.romaji}' (ID: {best_match.id})")
 
     payload = {}
-    metadata = series.metadata
     change_descriptions: List[str] = []
 
-    # Summary
-    if should_update_field(metadata.summary, metadata.summary_lock, config):
-        new_summary = clean_html(best_match.description)
-        if new_summary and new_summary != metadata.summary:
-            if translator and config.translation:
-                new_summary = translator.translate(new_summary, config.translation.target_language)
-            payload['summary'] = new_summary
-            if metadata.summary_lock and config.processing.force_unlock:
-                payload['summaryLock'] = False
-            change_descriptions.append("- Summary: Will be updated.")
+    update_fns = [
+        lambda: _update_summary(payload, series, best_match, config, translator),
+        lambda: _update_genres(payload, series, best_match, config, translator),
+        lambda: _update_status(payload, series, best_match, config),
+        lambda: _update_tags(payload, series, best_match, config, translator),
+        lambda: _update_age_rating(payload, series, best_match, config),
+    ]
 
-    # Genres
-    if best_match.genres and should_update_field(metadata.genres, metadata.genres_lock, config):
-        translated_genres = set(best_match.genres)
-        if translator and config.translation:
-            translated_genres = {translator.translate(genre, config.translation.target_language) for genre in best_match.genres}
-        if translated_genres != metadata.genres:
-            sorted_genres = sorted(list(translated_genres))
-            payload['genres'] = sorted_genres
-            if metadata.genres_lock and config.processing.force_unlock:
-                payload['genresLock'] = False
-            change_descriptions.append(f"- Genres: Set to {sorted_genres}")
-    
-    # Status
-    if best_match.status and should_update_field(metadata.status, metadata.status_lock, config):
-        new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
-        if new_status and new_status != metadata.status:
-            payload['status'] = new_status
-            if metadata.status_lock and config.processing.force_unlock:
-                payload['statusLock'] = False
-            change_descriptions.append(f"- Status: Set to '{new_status}'")
-            
-    # Tags
-    if best_match.tags and should_update_field(metadata.tags, metadata.tags_lock, config):
-        extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
-        
-        translated_tags = extracted_tags
-        if translator and config.translation:
-            translated_tags = {translator.translate(tag, config.translation.target_language) for tag in extracted_tags}
+    for fn in update_fns:
+        if change := fn():
+            change_descriptions.append(change)
 
-        if translated_tags != metadata.tags:
-            sorted_tags = sorted(list(translated_tags))
-            payload['tags'] = sorted_tags
-            if metadata.tags_lock and config.processing.force_unlock:
-                payload['tagsLock'] = False
-            change_descriptions.append(f"- Tags: Set to {sorted_tags}")
-
-    # Age Rating
-    if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
-        if metadata.age_rating != 18:
-            payload['ageRating'] = 18
-            if metadata.age_rating_lock and config.processing.force_unlock:
-                payload['ageRatingLock'] = False
-            change_descriptions.append("- Age Rating: Set to 18 (Adult)")
-    
     if not payload:
         logger.info("No metadata changes required for this series.")
         return None
