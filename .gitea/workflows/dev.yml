@@ -31,8 +31,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ vars.LOCAL_GITEA_URL }}
-          username: ${{ secrets.LOCAL_GITEA_USER }}
-          password: ${{ secrets.LOCAL_GITEA_TOKEN }}
+          username: ${{ secrets.LOCAL_GITEA_REGISTRY_USER }}
+          password: ${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
