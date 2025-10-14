@@ -41,9 +41,8 @@ jobs:
         run: |
           git config --global user.name "Gitea CI"
           git config --global user.email "ci@gitea.local"
-          git remote rm github || true
           git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
-          git push github HEAD:main --tags
+          git push --force github HEAD:main --tags
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
