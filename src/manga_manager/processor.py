@@ -251,8 +251,11 @@ def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: A
     if not config.processing.update_fields.cover_image:
         return None
     
-    if best_match.coverImage and best_match.coverImage.extraLarge:
-        image_url = best_match.coverImage.extraLarge
+    if best_match.coverImage:
+        image_url = best_match.coverImage.extraLarge or best_match.coverImage.large or best_match.coverImage.medium
+        if not image_url:
+            return None
+            
         if config.system.dry_run:
             return f"- Cover Image: Will be updated from {image_url}"
         else:
