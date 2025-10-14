@@ -33,15 +33,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .  
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
       - name: Push code to GitHub mirror
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUBPAT_TOKEN }}
@@ -52,3 +43,13 @@ jobs:
           git remote rm github || true
           git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
           git push github HEAD:main --tags
+          
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .  
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
