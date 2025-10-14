@@ -25,13 +25,20 @@ processing:
   overwrite_existing: true
   force_unlock: false
   exclude_series:
-    # - "Some Manga Title"
-    # - "Another Manga Title"
+    - "Some Manga Title"
+    - "Another Manga Title"
   skip_series_with_summary: false
+  update_fields:
+    summary: true
+    genres: true
+    tags: true
+    status: true
+    age_rating: true
+    cover_image: true
 
 translation:
   enabled: true
-  provider: "deepl"
+  provider: "google"
   target_language: "fr"
-  # deepl:
-    # api_key: "YOUR_DEEPL_API_KEY"
+  deepl:
+    api_key: "YOUR_DEEPL_API_KEY"

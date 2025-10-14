@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Core processing logic for the Manga Manager.
 """
@@ -176,6 +175,8 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
 
 
 def _update_summary(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    if not config.processing.update_fields.summary:
+        return None
     metadata = series.metadata
     if should_update_field(metadata.summary, metadata.summary_lock, config):
         new_summary = clean_html(best_match.description)
@@ -189,6 +190,8 @@ def _update_summary(payload: Dict, series: KomgaSeries, best_match: AniListMedia
     return None
 
 def _update_genres(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    if not config.processing.update_fields.genres:
+        return None
     metadata = series.metadata
     if best_match.genres and should_update_field(metadata.genres, metadata.genres_lock, config):
         translated_genres = set(best_match.genres)
@@ -203,6 +206,8 @@ def _update_genres(payload: Dict, series: KomgaSeries, best_match: AniListMedia,
     return None
 
 def _update_status(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
+    if not config.processing.update_fields.status:
+        return None
     metadata = series.metadata
     if best_match.status and should_update_field(metadata.status, metadata.status_lock, config):
         new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
@@ -214,6 +219,8 @@ def _update_status(payload: Dict, series: KomgaSeries, best_match: AniListMedia,
     return None
 
 def _update_tags(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
+    if not config.processing.update_fields.tags:
+        return None
     metadata = series.metadata
     if best_match.tags and should_update_field(metadata.tags, metadata.tags_lock, config):
         extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
@@ -229,6 +236,8 @@ def _update_tags(payload: Dict, series: KomgaSeries, best_match: AniListMedia, c
     return None
 
 def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
+    if not config.processing.update_fields.age_rating:
+        return None
     metadata = series.metadata
     if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
         if metadata.age_rating != 18:
@@ -236,6 +245,21 @@ def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMe
             if metadata.age_rating_lock and config.processing.force_unlock:
                 payload['ageRatingLock'] = False
             return "- Age Rating: Set to 18 (Adult)"
+    return None
+
+def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
+    if not config.processing.update_fields.cover_image:
+        return None
+    
+    if best_match.coverImage and best_match.coverImage.extraLarge:
+        image_url = best_match.coverImage.extraLarge
+        if config.system.dry_run:
+            return f"- Cover Image: Will be updated from {image_url}"
+        else:
+            if komga_client.upload_series_poster(series.id, image_url):
+                return f"- Cover Image: Successfully updated from {image_url}"
+            else:
+                return f"- Cover Image: Failed to update."
     return None
 
 def process_single_series(
@@ -276,7 +300,15 @@ def process_single_series(
         if change := fn():
             change_descriptions.append(change)
 
-    if not payload:
+    # Handle cover image separately as it's not part of the metadata payload
+    if cover_change := _update_cover_image(series, best_match, config, komga_client):
+        change_descriptions.append(cover_change)
+
+    if not payload and not config.processing.update_fields.cover_image:
+        logger.info("No metadata changes required for this series.")
+        return None
+        
+    if not change_descriptions:
         logger.info("No metadata changes required for this series.")
         return None
 
@@ -284,10 +316,11 @@ def process_single_series(
         logger.warning(f"[DRY-RUN] Series '{series.name}' has pending changes.")
         return change_descriptions
     else:
-        logger.info(f"Updating metadata for '{series.name}' on Komga...")
-        success = komga_client.update_series_metadata(series.id, payload)
-        if success:
-            logger.info(f"Successfully updated metadata for '{series.name}'.")
-        else:
-            logger.error(f"Failed to update metadata for '{series.name}'.")
+        if payload:
+            logger.info(f"Updating metadata for '{series.name}' on Komga...")
+            success = komga_client.update_series_metadata(series.id, payload)
+            if success:
+                logger.info(f"Successfully updated metadata for '{series.name}'.")
+            else:
+                logger.error(f"Failed to update metadata for '{series.name}'.")
         return None

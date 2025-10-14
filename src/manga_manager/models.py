@@ -47,6 +47,11 @@ class AniListTitle(BaseModel):
     english: Optional[str] = None
     native: Optional[str] = None
 
+class AniListCoverImage(BaseModel):
+    extraLarge: Optional[str] = None
+    large: Optional[str] = None
+    medium: Optional[str] = None
+
 class AniListMedia(BaseModel):
     id: int
     title: AniListTitle
@@ -56,3 +61,4 @@ class AniListMedia(BaseModel):
     tags: Optional[List[dict]] = []
     popularity: int = 0
     isAdult: bool = False
+    coverImage: Optional[AniListCoverImage] = None

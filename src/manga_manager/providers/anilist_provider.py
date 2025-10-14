@@ -48,6 +48,11 @@ class AnilistProvider(MetadataProvider):
                             rank
                         }
                         isAdult
+                        coverImage {
+                            extraLarge
+                            large
+                            medium
+                        }
                     }
                 }
             }

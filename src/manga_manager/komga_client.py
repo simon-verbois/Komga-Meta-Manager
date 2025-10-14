@@ -117,3 +117,30 @@ class KomgaClient:
         response = self._make_request("PATCH", endpoint, json_data=payload)
         return response is not None
 
+    def upload_series_poster(self, series_id: str, image_url: str) -> bool:
+        """
+        Uploads a poster for a series from a URL.
+        
+        Args:
+            series_id (str): The ID of the series to update.
+            image_url (str): The URL of the image to upload.
+            
+        Returns:
+            True if the upload was successful, False otherwise.
+        """
+        try:
+            image_response = self.session.get(image_url, stream=True, verify=self.verify_ssl)
+            image_response.raise_for_status()
+            
+            files = {'file': (f"{series_id}_poster", image_response.content, 'image/jpeg')}
+            
+            url = f"{self.base_url}{KOMGA_API_V1_PATH}/series/{series_id}/thumbnails"
+            
+            api_response = self.session.post(url, headers=self.headers, files=files, verify=self.verify_ssl)
+            api_response.raise_for_status()
+            
+            logging.info(f"Successfully uploaded poster for series ID {series_id} from {image_url}")
+            return True
+        except RequestException as e:
+            logging.error(f"Failed to upload poster for series ID {series_id} from {image_url}: {e}")
+            return False

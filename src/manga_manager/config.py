@@ -45,12 +45,22 @@ class ProviderConfig(BaseModel):
     min_score: int = 80
     cache: CacheConfig = Field(default_factory=CacheConfig)
 
+class UpdateFlags(BaseModel):
+    """Pydantic model for granular update control."""
+    summary: bool = True
+    genres: bool = True
+    tags: bool = True
+    status: bool = True
+    age_rating: bool = True
+    cover_image: bool = True
+
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
     overwrite_existing: bool = False
     force_unlock: bool = False
     exclude_series: List[str] = Field(default_factory=list)
     skip_series_with_summary: bool = False
+    update_fields: UpdateFlags = Field(default_factory=UpdateFlags)
 
 class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""
