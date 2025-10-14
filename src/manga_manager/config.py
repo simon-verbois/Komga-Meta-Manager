@@ -37,10 +37,15 @@ class KomgaConfig(BaseModel):
     libraries: List[str] = Field(..., min_length=1)
     verify_ssl: bool = True
 
+class CacheConfig(BaseModel):
+    """Pydantic model for cache settings."""
+    ttl_hours: int = 168  # Default to 7 days
+
 class ProviderConfig(BaseModel):
     """Pydantic model for metadata provider settings."""
     name: str = "anilist"
     min_score: int = 80
+    cache: CacheConfig = Field(default_factory=CacheConfig)
 
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""

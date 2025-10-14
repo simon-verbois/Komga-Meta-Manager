@@ -5,6 +5,7 @@
 Provider for interacting with the AniList GraphQL API.
 """
 import logging
+from pathlib import Path
 from typing import List
 
 from gql import gql, Client
@@ -20,14 +21,15 @@ ANILIST_API_URL = "https://graphql.anilist.co"
 class AnilistProvider(MetadataProvider):
     """A provider to fetch data from the AniList GraphQL API."""
 
-    def __init__(self):
+    def __init__(self, cache_dir: Path, cache_ttl_hours: int):
+        super().__init__(cache_dir, cache_ttl_hours)
         transport = RequestsHTTPTransport(url=ANILIST_API_URL, verify=True, retries=3)
         self.client = Client(transport=transport, fetch_schema_from_transport=False)
         logger.info("Anilist Provider initialized.")
 
-    def search(self, search_term: str) -> List[AniListMedia]:
+    def _perform_search(self, search_term: str) -> List[AniListMedia]:
         """
-        Searches for a manga on AniList and returns a list of potential matches.
+        Performs the actual search for a manga on AniList.
         """
         query = gql("""
             query ($search: String, $type: MediaType, $perPage: Int) {
@@ -60,7 +62,7 @@ class AnilistProvider(MetadataProvider):
             result = self.client.execute(query, variable_values=params)
 
             if result and result.get('Page') and result['Page'].get('media'):
-                return [AniListMedia(**media_item) for media_item in result['Page']['media']]
+                return [AniListMedia.model_validate(media_item) for media_item in result['Page']['media']]
             else:
                 logger.warning(f"No results found on AniList for '{search_term}'")
                 return []

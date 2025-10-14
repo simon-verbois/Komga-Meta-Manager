@@ -6,6 +6,7 @@ Core processing logic for the Manga Manager.
 """
 import json
 import logging
+from pathlib import Path
 from typing import List, Optional, Dict
 
 from manga_manager.config import AppConfig
@@ -99,8 +100,11 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
     Main processing function that iterates through libraries and series.
     It now returns the translator instance so its cache can be saved.
     """
+    cache_dir = Path("/config/cache")
+    cache_dir.mkdir(exist_ok=True)
+
     komga_client = KomgaClient(config.komga)
-    metadata_provider = get_provider(config.provider.name)
+    metadata_provider = get_provider(config.provider, cache_dir)
     if not metadata_provider:
         logger.error(f"Failed to initialize provider '{config.provider.name}'. Aborting.")
         return None
@@ -162,6 +166,10 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
 
     if config.system.dry_run:
         _print_dry_run_report(processed_count, updated_series_report)
+
+    if metadata_provider:
+        metadata_provider.save_cache()
+        metadata_provider.log_cache_summary()
 
     if translator and hasattr(translator, 'log_cache_summary'):
         translator.log_cache_summary()
