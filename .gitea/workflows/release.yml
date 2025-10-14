@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Extract Docker metadata (tags, labels)
         id: meta
@@ -43,7 +45,7 @@ jobs:
           git remote rm github || true
           git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
           git push github HEAD:main --tags
-          
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
