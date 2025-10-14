@@ -39,7 +39,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUBPAT_TOKEN }}
         run: |
-          echo ${GITHUB_TOKEN}
           git config --global user.name "Gitea CI"
           git config --global user.email "ci@gitea.local"
           git remote rm github || true
