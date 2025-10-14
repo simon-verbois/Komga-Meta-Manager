@@ -46,7 +46,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUBPAT_TOKEN }}
         run: |
+          echo ${GITHUB_TOKEN}
           git config --global user.name "Gitea CI"
           git config --global user.email "ci@gitea.local"
-          git remote add github "https://x-access-token:${GITHUBPAT_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
+          git remote rm github || true
+          git remote add github "https://x-access-token:${GITHUB_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
           git push github HEAD:main --tags
