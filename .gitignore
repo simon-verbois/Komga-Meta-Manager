@@ -1,4 +1,4 @@
 config.yml
 translations.yml
-translation_cache.json
+/config/cache/
 testing-compose.yml

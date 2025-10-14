@@ -11,7 +11,7 @@ from .base import Translator
 
 logger = logging.getLogger(__name__)
 TRANSLATIONS_CONFIG_PATH = "/config/translations.yml"
-TRANSLATION_CACHE_PATH = "/config/translation_cache.json"
+TRANSLATION_CACHE_PATH = "/config/cache/translation_cache.json"
 
 def load_manual_translations() -> dict:
     """Loads the manual translations YAML file if it exists."""

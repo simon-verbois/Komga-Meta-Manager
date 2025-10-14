@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] - 2025-10-14
+
+### Added
+- Add metadata provider cache system.
+
+### Changed
+- Move caches in dedicated folder
+
+### Fixed
+
+### Removed
+
+
 ## [0.2.0] - 2025-10-14
 
 ### Added
