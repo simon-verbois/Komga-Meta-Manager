@@ -49,8 +49,6 @@ def run_job_and_save_cache(config: AppConfig):
 
 def main():
     """Main function to run the Manga Manager."""
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    
     try:
         app_config = load_config()
         setup_logging(app_config.system.debug)

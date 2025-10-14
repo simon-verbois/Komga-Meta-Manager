@@ -63,6 +63,8 @@ class AnilistProvider(MetadataProvider):
         try:
             logger.info(f"Searching AniList for manga: '{search_term}'")
             result = self.client.execute(query, variable_values=params)
+            
+            logger.debug(f"Raw AniList response for '{search_term}': {result}")
 
             if result and result.get('Page') and result['Page'].get('media'):
                 return [AniListMedia.model_validate(media_item) for media_item in result['Page']['media']]
