@@ -4,6 +4,8 @@
 
 ### Added
 - Add metadata provider cache system.
+- Add settings to select which fields should be updated.
+- Add ability to update cover image.
 
 ### Changed
 - Move caches in dedicated folder
