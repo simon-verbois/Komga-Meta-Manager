@@ -1,5 +1,3 @@
-# Path: src/manga_manager/config.py
-
 # -*- coding: utf-8 -*-
 """
 Handles loading and validation of the application's configuration file.

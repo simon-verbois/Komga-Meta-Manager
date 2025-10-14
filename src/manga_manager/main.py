@@ -1,5 +1,3 @@
-# Path: src/manga_manager/main.py
-
 # -*- coding: utf-8 -*-
 """
 Main entry point for the Manga Manager application.

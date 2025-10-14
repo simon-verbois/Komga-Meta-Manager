@@ -1,5 +1,3 @@
-# Path: src/manga_manager/models.py
-
 # -*- coding: utf-8 -*-
 """
 Pydantic models for structuring data from APIs.

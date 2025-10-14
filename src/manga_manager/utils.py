@@ -1,5 +1,3 @@
-# Path: src/manga_manager/utils.py
-
 # -*- coding: utf-8 -*-
 """
 Utility functions for the Manga Manager.

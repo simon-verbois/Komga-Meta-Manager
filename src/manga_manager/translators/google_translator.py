@@ -1,5 +1,3 @@
-# Path: src/manga_manager/translators/google_translator.py
-
 # -*- coding: utf-8 -*-
 """
 Translator implementation using the googletrans library.

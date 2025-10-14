@@ -1,5 +1,3 @@
-# Path: src/manga_manager/providers/anilist_provider.py
-
 # -*- coding: utf-8 -*-
 """
 Provider for interacting with the AniList GraphQL API.

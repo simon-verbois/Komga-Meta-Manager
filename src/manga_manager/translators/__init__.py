@@ -1,5 +1,3 @@
-# Path: src/manga_manager/translators/__init__.py
-
 # -*- coding: utf-8 -*-
 """
 Translator module for handling metadata translation.

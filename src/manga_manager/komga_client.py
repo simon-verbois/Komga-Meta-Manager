@@ -1,5 +1,3 @@
-# Path: src/manga_manager/komga_client.py
-
 # -*- coding: utf-8 -*-
 """
 Client for interacting with the Komga REST API.

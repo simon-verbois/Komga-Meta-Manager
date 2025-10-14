@@ -1,5 +1,3 @@
-# Path: src/manga_manager/providers/base.py
-
 # -*- coding: utf-8 -*-
 import logging
 from abc import ABC, abstractmethod

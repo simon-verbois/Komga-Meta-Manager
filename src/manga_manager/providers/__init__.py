@@ -1,5 +1,3 @@
-# Path: src/manga_manager/providers/__init__.py
-
 # -*- coding: utf-8 -*-
 """
 Provider module for handling metadata fetching.

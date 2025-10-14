@@ -1,5 +1,3 @@
-# Path: src/manga_manager/processor.py
-
 # -*- coding: utf-8 -*-
 """
 Core processing logic for the Manga Manager.

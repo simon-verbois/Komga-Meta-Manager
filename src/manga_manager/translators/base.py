@@ -1,5 +1,3 @@
-# Path: src/manga_manager/translators/base.py
-
 # -*- coding: utf-8 -*-
 """
 Abstract base class for all translator implementations.
