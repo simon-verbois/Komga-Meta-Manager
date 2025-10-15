@@ -245,26 +245,57 @@ def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMe
 
 def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
     """Update the authors field in Komga from AniList staff data."""
+    logger.debug(f"Checking authors update for '{series.name}' - Config enabled: {config.processing.update_fields.authors}")
+
     if not config.processing.update_fields.authors:
+        logger.debug("Authors update disabled in configuration")
         return None
 
     metadata = series.metadata
-    if best_match.staff and should_update_field(metadata.authors, getattr(metadata, 'authors_lock', False), config):
-        # Extract author names from staff data (prioritize Story, Art roles)
-        authors = []
-        for staff_edge in best_match.staff:
-            if staff_edge.node.name and staff_edge.node.name.full:
-                role = staff_edge.role.lower()
-                # Include Story/Art roles or any primary creator roles
-                if any(keyword in role for keyword in ['story', 'art', 'author', 'creator', 'writer', 'artist']):
-                    authors.append(staff_edge.node.name.full)
+    current_authors = metadata.authors or []
+    logger.debug(f"Current authors in Komga: {current_authors}")
 
-        # Remove duplicates while preserving order
-        authors = list(dict.fromkeys(authors))
+    if not best_match.staff:
+        logger.debug("No staff data found in AniList response")
+        return None
 
-        if authors and set(authors) != set(metadata.authors or []):
-            payload['authors'] = authors
-            return f"- Authors: Set to {authors}"
+    logger.debug(f"Found {len(best_match.staff)} staff entries in AniList")
+
+    # Extract author names from staff data (prioritize Story, Art roles)
+    authors = []
+    for staff_edge in best_match.staff:
+        logger.debug(f"Processing staff: {staff_edge}")
+        if staff_edge.node.name and staff_edge.node.name.full:
+            name = staff_edge.node.name.full
+            role = staff_edge.role.lower()
+            logger.debug(f"Staff member: '{name}' with role '{staff_edge.role}'")
+
+            # Include Story/Art roles or any primary creator roles
+            if any(keyword in role for keyword in ['story', 'art', 'author', 'creator', 'writer', 'artist']):
+                authors.append(name)
+                logger.debug(f"Included '{name}' as author")
+            else:
+                logger.debug(f"Skipped '{name}' - role '{staff_edge.role}' not considered author role")
+        else:
+            logger.debug(f"Skipped staff entry - missing name data: {staff_edge}")
+
+    # Remove duplicates while preserving order
+    authors = list(dict.fromkeys(authors))
+    logger.debug(f"Deduplicated authors list: {authors}")
+
+    authors_lock = getattr(metadata, 'authors_lock', False)
+    can_update = should_update_field(current_authors, authors_lock, config)
+    logger.debug(f"Can update authors? {can_update} (current: {current_authors}, new: {authors}, locked: {authors_lock})")
+
+    if authors and can_update and set(authors) != set(current_authors):
+        payload['authors'] = authors
+        if authors_lock and config.processing.force_unlock:
+            payload['authorsLock'] = False
+        logger.info(f"Will update authors to: {authors}")
+        return f"- Authors: Set to {authors}"
+    else:
+        logger.debug(f"No authors update needed - authors: {authors}, can_update: {can_update}")
+
     return None
 
 def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
