@@ -34,7 +34,6 @@ processing:
     status: true
     age_rating: true
     cover_image: true
-    authors: true
 
 translation:
   enabled: true

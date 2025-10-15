@@ -99,16 +99,6 @@ class AnilistProvider(MetadataProvider):
                             large
                             medium
                         }
-                        staff(perPage: 20, sort: [RELEVANCE]) {
-                            edges {
-                                node {
-                                    name {
-                                        full
-                                    }
-                                }
-                                role
-                            }
-                        }
                     }
                 }
             }

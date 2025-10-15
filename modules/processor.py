@@ -243,74 +243,15 @@ def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMe
             return "- Age Rating: Set to 18 (Adult)"
     return None
 
-def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
-    """Update the authors field in Komga from AniList staff data."""
-    logger.debug(f"Checking authors update for '{series.name}' - Config enabled: {config.processing.update_fields.authors}")
-
-    if not config.processing.update_fields.authors:
-        logger.debug("Authors update disabled in configuration")
-        return None
-
-    metadata = series.metadata
-    current_authors = metadata.authors or []
-    logger.debug(f"Current authors in Komga: {current_authors}")
-
-    if not best_match.staff:
-        logger.debug("No staff data found in AniList response")
-        return None
-
-    if not best_match.staff or not best_match.staff.edges:
-        logger.debug("No staff data found in AniList staff edges")
-        return None
-
-    logger.debug(f"Found {len(best_match.staff.edges)} staff entries in AniList")
-
-    # Extract author names from staff data (prioritize Story, Art roles)
-    authors = []
-    for staff_edge in best_match.staff.edges:
-        logger.debug(f"Processing staff: {staff_edge}")
-        if staff_edge.node and hasattr(staff_edge.node, 'full') and staff_edge.node.full:
-            name = staff_edge.node.full
-            role = staff_edge.role.lower()
-            logger.debug(f"Staff member: '{name}' with role '{staff_edge.role}'")
-
-            # Include Story/Art roles or any primary creator roles
-            if any(keyword in role for keyword in ['story', 'art', 'author', 'creator', 'writer', 'artist']):
-                authors.append(name)
-                logger.debug(f"Included '{name}' as author")
-            else:
-                logger.debug(f"Skipped '{name}' - role '{staff_edge.role}' not considered author role")
-        else:
-            logger.debug(f"Skipped staff entry - missing name data: {staff_edge}")
-
-    # Remove duplicates while preserving order
-    authors = list(dict.fromkeys(authors))
-    logger.debug(f"Deduplicated authors list: {authors}")
-
-    authors_lock = metadata.authors_lock
-    can_update = should_update_field(current_authors, authors_lock, config)
-    logger.debug(f"Can update authors? {can_update} (current: {current_authors}, new: {authors}, locked: {authors_lock})")
-
-    if authors and can_update and set(authors) != set(current_authors):
-        payload['authors'] = authors
-        if authors_lock and config.processing.force_unlock:
-            payload['authorsLock'] = False
-        logger.info(f"Will update authors to: {authors}")
-        return f"- Authors: Set to {authors}"
-    else:
-        logger.debug(f"No authors update needed - authors: {authors}, can_update: {can_update}")
-
-    return None
-
 def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
     if not config.processing.update_fields.cover_image:
         return None
-
+    
     if best_match.coverImage:
         image_url = best_match.coverImage.extraLarge or best_match.coverImage.large or best_match.coverImage.medium
         if not image_url:
             return None
-
+            
         if config.system.dry_run:
             return f"- Cover Image: Will be updated from {image_url}"
         else:
@@ -334,7 +275,7 @@ def process_single_series(
     """
     logger.info(f"--- Processing Series: {series.name} ---")
 
-    candidates = provider.search(series.name, config)
+    candidates = provider.search(series.name)
     best_match = choose_best_match(series.name, candidates, config.provider.min_score)
 
     if not best_match:
@@ -352,7 +293,6 @@ def process_single_series(
         lambda: _update_status(payload, series, best_match, config),
         lambda: _update_tags(payload, series, best_match, config, translator),
         lambda: _update_age_rating(payload, series, best_match, config),
-        lambda: _update_authors(payload, series, best_match, config),
     ]
 
     for fn in update_fns:

@@ -32,8 +32,6 @@ class KomgaSeriesMetadata(BaseModel):
     tags_lock: bool = Field(..., alias='tagsLock')
     total_book_count: Optional[int] = Field(None, alias='totalBookCount')
     total_book_count_lock: bool = Field(..., alias='totalBookCountLock')
-    authors: Optional[List[str]] = Field(default_factory=list)
-    authors_lock: bool = Field(default=False, alias='authorsLock')
 
 class KomgaSeries(BaseModel):
     id: str
@@ -54,16 +52,6 @@ class AniListCoverImage(BaseModel):
     large: Optional[str] = None
     medium: Optional[str] = None
 
-class AniListName(BaseModel):
-    full: Optional[str] = None
-
-class AniListStaff(BaseModel):
-    node: AniListName
-    role: str
-
-class AniListStaffEdges(BaseModel):
-    edges: Optional[List[AniListStaff]] = []
-
 class AniListMedia(BaseModel):
     id: int
     title: AniListTitle
@@ -74,4 +62,3 @@ class AniListMedia(BaseModel):
     popularity: int = 0
     isAdult: bool = False
     coverImage: Optional[AniListCoverImage] = None
-    staff: Optional[AniListStaffEdges] = None

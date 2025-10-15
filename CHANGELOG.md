@@ -17,14 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings to select which fields should be updated**
 - **Ability to update cover image**
 
-### Added
-- **Authors metadata support**: Added ability to fetch and update creator/author information from AniList
-  - New GraphQL query including staff data with roles (Story, Art, etc.)
-  - Extended AniListMedia model with staff field
-  - Configuration option `authors: true` in update_fields
-  - Automatic population of Komga's authors field
-  - Template configuration updated with new authors field
-
 ### Changed
 - **Complete project structure refactoring**:
   - Moved from `src/manga_manager/` to `modules/` at project root for cleaner organization
@@ -35,10 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed source copy path from `./src/manga_manager` to `./modules`
   - Updated entrypoint from `manga_manager.main` to `modules.main`
   - Fixed remaining internal imports in `main.py`
-- **Cache field validation**: Added intelligent cache freshness checking
-  - Cache entries are now validated against enabled configuration fields
-  - Missing required fields (like `staff` when `authors: true`) trigger fresh API calls
-  - Eliminates stale cache issues when new fields are added to the codebase
 
 ## [0.2.0] - 2025-10-14
 
