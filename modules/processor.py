@@ -269,8 +269,8 @@ def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia
     authors = []
     for staff_edge in best_match.staff.edges:
         logger.debug(f"Processing staff: {staff_edge}")
-        if staff_edge.node.name and staff_edge.node.name.full:
-            name = staff_edge.node.name.full
+        if staff_edge.node and hasattr(staff_edge.node, 'full') and staff_edge.node.full:
+            name = staff_edge.node.full
             role = staff_edge.role.lower()
             logger.debug(f"Staff member: '{name}' with role '{staff_edge.role}'")
 
