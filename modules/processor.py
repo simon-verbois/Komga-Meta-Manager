@@ -149,7 +149,7 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
 
         for series in series_list:
             if series.name in config.processing.exclude_series:
-                logger.info(f"Skipping series '{series.name}' as it is in the exclude list.")
+                logger.info(f"Skipping series '{series.name}', excluded.")
                 continue
             
             processed_count += 1
