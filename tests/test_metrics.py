@@ -4,7 +4,7 @@ Tests for the metrics collection module.
 """
 import time
 import pytest
-from manga_manager.metrics import ProcessingMetrics
+from modules.metrics import ProcessingMetrics
 
 
 class TestProcessingMetrics:

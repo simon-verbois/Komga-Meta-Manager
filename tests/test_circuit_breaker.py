@@ -6,7 +6,7 @@ import time
 import pytest
 from unittest.mock import Mock, patch
 
-from manga_manager.circuit_breaker import (
+from modules.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerState,

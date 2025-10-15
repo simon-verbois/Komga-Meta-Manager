@@ -6,13 +6,13 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict
 
-from manga_manager.config import AppConfig
-from manga_manager.komga_client import KomgaClient
-from manga_manager.providers import get_provider
-from manga_manager.providers.base import MetadataProvider
-from manga_manager.translators import get_translator, Translator
-from manga_manager.models import KomgaSeries, AniListMedia
-from manga_manager.utils import clean_html
+from modules.config import AppConfig
+from modules.komga_client import KomgaClient
+from modules.providers import get_provider
+from modules.providers.base import MetadataProvider
+from modules.translators import get_translator, Translator
+from modules.models import KomgaSeries, AniListMedia
+from modules.utils import clean_html
 from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)

@@ -6,8 +6,8 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from thefuzz import fuzz
 
-from manga_manager.processor import choose_best_match, should_update_field
-from manga_manager.models import AniListMedia, AniListTitle
+from modules.processor import choose_best_match, should_update_field
+from modules.models import AniListMedia, AniListTitle
 
 
 class TestChooseBestMatch:

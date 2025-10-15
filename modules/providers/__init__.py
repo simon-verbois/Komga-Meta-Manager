@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from manga_manager.config import ProviderConfig
+from modules.config import ProviderConfig
 from .base import MetadataProvider
 from .anilist_provider import AnilistProvider
 
