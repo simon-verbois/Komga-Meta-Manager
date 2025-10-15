@@ -32,6 +32,8 @@ class KomgaSeriesMetadata(BaseModel):
     tags_lock: bool = Field(..., alias='tagsLock')
     total_book_count: Optional[int] = Field(None, alias='totalBookCount')
     total_book_count_lock: bool = Field(..., alias='totalBookCountLock')
+    authors: Optional[List[str]] = Field(default_factory=list)
+    authors_lock: bool = Field(default=False, alias='authorsLock')
 
 class KomgaSeries(BaseModel):
     id: str

@@ -283,7 +283,7 @@ def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia
     authors = list(dict.fromkeys(authors))
     logger.debug(f"Deduplicated authors list: {authors}")
 
-    authors_lock = getattr(metadata, 'authors_lock', False)
+    authors_lock = metadata.authors_lock
     can_update = should_update_field(current_authors, authors_lock, config)
     logger.debug(f"Can update authors? {can_update} (current: {current_authors}, new: {authors}, locked: {authors_lock})")
 
