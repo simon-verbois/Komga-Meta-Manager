@@ -243,15 +243,39 @@ def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMe
             return "- Age Rating: Set to 18 (Adult)"
     return None
 
+def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
+    """Update the authors field in Komga from AniList staff data."""
+    if not config.processing.update_fields.authors:
+        return None
+
+    metadata = series.metadata
+    if best_match.staff and should_update_field(metadata.authors, getattr(metadata, 'authors_lock', False), config):
+        # Extract author names from staff data (prioritize Story, Art roles)
+        authors = []
+        for staff_edge in best_match.staff:
+            if staff_edge.node.name and staff_edge.node.name.full:
+                role = staff_edge.role.lower()
+                # Include Story/Art roles or any primary creator roles
+                if any(keyword in role for keyword in ['story', 'art', 'author', 'creator', 'writer', 'artist']):
+                    authors.append(staff_edge.node.name.full)
+
+        # Remove duplicates while preserving order
+        authors = list(dict.fromkeys(authors))
+
+        if authors and set(authors) != set(metadata.authors or []):
+            payload['authors'] = authors
+            return f"- Authors: Set to {authors}"
+    return None
+
 def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
     if not config.processing.update_fields.cover_image:
         return None
-    
+
     if best_match.coverImage:
         image_url = best_match.coverImage.extraLarge or best_match.coverImage.large or best_match.coverImage.medium
         if not image_url:
             return None
-            
+
         if config.system.dry_run:
             return f"- Cover Image: Will be updated from {image_url}"
         else:
@@ -293,6 +317,7 @@ def process_single_series(
         lambda: _update_status(payload, series, best_match, config),
         lambda: _update_tags(payload, series, best_match, config, translator),
         lambda: _update_age_rating(payload, series, best_match, config),
+        lambda: _update_authors(payload, series, best_match, config),
     ]
 
     for fn in update_fns:

@@ -52,6 +52,10 @@ class AniListCoverImage(BaseModel):
     large: Optional[str] = None
     medium: Optional[str] = None
 
+class AniListStaff(BaseModel):
+    node: AniListName
+    role: str
+
 class AniListMedia(BaseModel):
     id: int
     title: AniListTitle
@@ -62,3 +66,4 @@ class AniListMedia(BaseModel):
     popularity: int = 0
     isAdult: bool = False
     coverImage: Optional[AniListCoverImage] = None
+    staff: Optional[List[AniListStaff]] = []

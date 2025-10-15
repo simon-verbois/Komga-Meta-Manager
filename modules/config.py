@@ -53,6 +53,7 @@ class UpdateFlags(BaseModel):
     status: bool = True
     age_rating: bool = True
     cover_image: bool = True
+    authors: bool = True
 
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
