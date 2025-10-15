@@ -9,13 +9,16 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 
 ## ✨ Features
 
-  * **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, and **Tags** for your Komga series from **AniList**.
+  * **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, **Tags**, and **Cover Images** for your Komga series from **AniList**.
   * **Targeted Processing:** Only processes libraries you specify in the configuration.
   * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
   * **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
-  * **Persistent Caching:** Avoid repeated API calls and speed up processing with a persistent translation cache.
+  * **Advanced Caching:** Multi-level caching system with automatic periodic saves to prevent data loss.
+  * **Robust Error Handling:** Configurable timeouts, exponential backoff retry logic, and graceful error recovery.
+  * **Comprehensive Metrics:** Detailed processing statistics, cache performance, and API call monitoring.
   * **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
   * **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
+  * **Unit Testing Suite:** Extensive test coverage with pytest for reliable, maintainable code.
 
 ## 📷 Example (Before/After)
 
@@ -106,12 +109,51 @@ Check the logs to ensure the application is running correctly and connecting to 
 docker logs komga-meta-manager -f
 ```
 
-## 📜 Changelog
+## 🧪 Testing
+
+The application includes a comprehensive test suite:
+
+```bash
+# Install testing dependencies
+pip install -r requirements.txt
+pip install pytest pytest-cov pytest-mock
+
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=manga_manager --cov-report=html
+
+# Run specific test categories
+pytest -m "unit"        # Unit tests only
+pytest -m "integration" # Integration tests
+```
+
+## � Documentation
+
+Complete documentation is available in the `docs/` directory:
+
+- **[Development Guide](docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices
+- **[Testing Guide](docs/TESTING.md)**: Comprehensive testing instructions and strategies
+- **[Architecture](docs/ARCHITECTURE.md)**: Detailed architectural documentation
+
+## �📜 Changelog
 
 Check the [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and versions.
+
+## 🤝 Contributing
+
+We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md) for:
+
+- Development environment setup
+- Code style guidelines
+- Testing requirements
+- Pull request process
 
 ## ⚙️ Resources
 
 [Dockerhub Repository](https://hub.docker.com/r/simonverbois/komga-meta-manager)
 
 [Komga Homepage](https://komga.org/)
+
+[Komga API Documentation](https://komga.org/guides/rest-api/)

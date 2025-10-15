@@ -65,6 +65,8 @@ class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""
     api_key: str = Field(..., min_length=1)
 
+
+
 class TranslationConfig(BaseModel):
     """Pydantic model for translation settings."""
     enabled: bool = True

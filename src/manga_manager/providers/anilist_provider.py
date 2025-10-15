@@ -11,23 +11,69 @@ from gql.transport.requests import RequestsHTTPTransport
 from gql.transport.exceptions import TransportQueryError
 
 from manga_manager.models import AniListMedia
+from manga_manager.constants import (
+    ANILIST_API_URL,
+    ANILIST_SEARCH_RESULTS_PER_PAGE,
+    HTTP_TIMEOUTS,
+    MAX_RETRIES
+)
 from .base import MetadataProvider
 
 logger = logging.getLogger(__name__)
-ANILIST_API_URL = "https://graphql.anilist.co"
 
 class AnilistProvider(MetadataProvider):
-    """A provider to fetch data from the AniList GraphQL API."""
+    """
+    A provider to fetch manga metadata from the AniList GraphQL API.
+
+    This provider searches for manga on AniList and retrieves comprehensive
+    metadata including titles, descriptions, genres, tags, and cover images.
+    Results are cached to minimize API calls.
+
+    Attributes:
+        client: The GraphQL client for AniList API
+        cache_dir: Directory for storing cached responses
+        cache_ttl_hours: Time-to-live for cache entries in hours
+    """
 
     def __init__(self, cache_dir: Path, cache_ttl_hours: int):
         super().__init__(cache_dir, cache_ttl_hours)
-        transport = RequestsHTTPTransport(url=ANILIST_API_URL, verify=True, retries=3)
-        self.client = Client(transport=transport, fetch_schema_from_transport=False)
-        logger.info("Anilist Provider initialized.")
+        
+        # Configure transport with timeouts and retries
+        transport = RequestsHTTPTransport(
+            url=ANILIST_API_URL,
+            verify=True,
+            retries=MAX_RETRIES,
+            timeout=HTTP_TIMEOUTS[1]  # Use read timeout for GraphQL queries
+        )
+        
+        self.client = Client(
+            transport=transport,
+            fetch_schema_from_transport=False
+        )
+        
+        logger.info(f"AniList Provider initialized with {cache_ttl_hours}h cache TTL")
 
     def _perform_search(self, search_term: str) -> List[AniListMedia]:
         """
-        Performs the actual search for a manga on AniList.
+        Perform the actual search for a manga on AniList.
+
+        This method executes a GraphQL query to search for manga matching the
+        given search term. Results are sorted by search relevance.
+
+        Args:
+            search_term: The manga title to search for
+
+        Returns:
+            A list of AniListMedia objects matching the search term.
+            Returns an empty list if no results are found or an error occurs.
+
+        Examples:
+            >>> provider._perform_search("One Piece")
+            [AniListMedia(id=30013, title=...), ...]
+
+        Note:
+            This method is called by the parent class's search() method,
+            which handles caching. Direct calls will bypass the cache.
         """
         query = gql("""
             query ($search: String, $type: MediaType, $perPage: Int) {
@@ -58,22 +104,50 @@ class AnilistProvider(MetadataProvider):
             }
         """)
 
-        params = {"search": search_term, "type": "MANGA", "perPage": 5}
+        params = {
+            "search": search_term,
+            "type": "MANGA",
+            "perPage": ANILIST_SEARCH_RESULTS_PER_PAGE
+        }
 
         try:
             logger.info(f"Searching AniList for manga: '{search_term}'")
             result = self.client.execute(query, variable_values=params)
-            
+
             logger.debug(f"Raw AniList response for '{search_term}': {result}")
 
             if result and result.get('Page') and result['Page'].get('media'):
-                return [AniListMedia.model_validate(media_item) for media_item in result['Page']['media']]
+                media_list = result['Page']['media']
+                validated_media = []
+
+                # Validate each media item individually to avoid losing all results
+                # if one item is malformed
+                for media_item in media_list:
+                    try:
+                        validated_media.append(AniListMedia.model_validate(media_item))
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to validate media item from AniList response: {e}. "
+                            f"Skipping this result."
+                        )
+
+                logger.info(f"Found {len(validated_media)} valid results for '{search_term}'")
+                return validated_media
             else:
                 logger.warning(f"No results found on AniList for '{search_term}'")
                 return []
+
         except TransportQueryError as e:
-            logger.error(f"A GraphQL error occurred while querying AniList for '{search_term}': {e}")
+            # GraphQL-specific errors (e.g., rate limiting, query syntax errors)
+            logger.error(
+                f"GraphQL error while querying AniList for '{search_term}': {e}. "
+                f"This may indicate rate limiting or an API issue."
+            )
             return []
         except Exception as e:
-            logger.error(f"An unexpected error occurred while querying AniList for '{search_term}': {e}")
+            # Catch-all for network errors, timeouts, etc.
+            logger.error(
+                f"Unexpected error while querying AniList for '{search_term}': {e}",
+                exc_info=True
+            )
             return []
