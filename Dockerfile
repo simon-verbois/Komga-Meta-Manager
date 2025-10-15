@@ -24,8 +24,8 @@ RUN groupadd --system --gid 1000 appgroup && useradd --system --uid 1000 --gid a
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy source code
-# We copy it into a 'manga_manager' subdirectory to make the python -m command work correctly
-COPY ./src/manga_manager ./manga_manager
+# We copy it into a 'modules' subdirectory to make the python -m command work correctly
+COPY ./modules ./modules
 
 # Change ownership of the app directory
 RUN chown -R appuser:appgroup /app
@@ -37,4 +37,4 @@ USER appuser
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Command to run the application as a module
-CMD [ "python", "-m", "manga_manager.main" ]
+CMD [ "python", "-m", "modules.main" ]

@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated all imports across the codebase (`manga_manager.xxx` → `modules.xxx`)
   - Simplified package structure while maintaining all functionality
   - Updated `.gitignore` with comprehensive Python-specific ignore patterns
+- **Docker configuration**: Updated Dockerfile to reflect new `modules/` structure
+  - Changed source copy path from `./src/manga_manager` to `./modules`
+  - Updated entrypoint from `manga_manager.main` to `modules.main`
 
 ## [0.2.0] - 2025-10-14
 
