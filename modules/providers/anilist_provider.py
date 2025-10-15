@@ -10,8 +10,8 @@ from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
 from gql.transport.exceptions import TransportQueryError
 
-from manga_manager.models import AniListMedia
-from manga_manager.constants import (
+from modules.models import AniListMedia
+from modules.constants import (
     ANILIST_API_URL,
     ANILIST_SEARCH_RESULTS_PER_PAGE,
     HTTP_TIMEOUTS,

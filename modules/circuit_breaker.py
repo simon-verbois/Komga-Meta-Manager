@@ -242,7 +242,7 @@ def create_circuit_breaker_config(service_name: str, name_suffix: str = "") -> C
     Returns:
         Configured CircuitBreakerConfig instance
     """
-    from manga_manager.constants import CIRCUIT_BREAKER_DEFAULTS
+    from modules.constants import CIRCUIT_BREAKER_DEFAULTS
 
     if service_name not in CIRCUIT_BREAKER_DEFAULTS:
         raise ValueError(f"Unknown service '{service_name}' for circuit breaker configuration")

@@ -7,7 +7,7 @@ Komga Meta Manager is a modular Python application designed to automatically enr
 ## 📦 Modular Structure
 
 ```
-src/manga_manager/
+modules/
 ├── constants.py          # Global constants (timeouts, paths, etc.)
 ├── config.py             # Configuration and validation with Pydantic
 ├── main.py               # Entry point and orchestration
@@ -221,7 +221,7 @@ logging.config.dictConfig({
         }
     },
     'loggers': {
-        'manga_manager': {
+        'modules': {
             'level': 'INFO',
             'handlers': ['file']
         }

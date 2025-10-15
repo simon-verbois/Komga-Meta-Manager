@@ -11,16 +11,16 @@ import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
 import urllib3
 
-from manga_manager.config import KomgaConfig
-from manga_manager.models import KomgaLibrary, KomgaSeries
-from manga_manager.constants import (
+from modules.config import KomgaConfig
+from modules.models import KomgaLibrary, KomgaSeries
+from modules.constants import (
     KOMGA_API_V1_PATH,
     HTTP_TIMEOUTS,
     MAX_RETRIES,
     RETRY_BACKOFF_FACTOR,
     KOMGA_SERIES_PAGE_SIZE
 )
-from manga_manager.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException, circuit_breaker_factory
+from modules.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException, circuit_breaker_factory
 
 logger = logging.getLogger(__name__)
 

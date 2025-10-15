@@ -33,8 +33,8 @@ pytest
 pytest -v
 
 # Tests with coverage report
-pytest --cov=manga_manager --cov-report=html
-pytest --cov=manga_manager --cov-report=term-missing
+pytest --cov=modules --cov-report=html
+pytest --cov=modules --cov-report=term-missing
 
 # Specific module tests
 pytest tests/test_metrics.py
@@ -88,7 +88,7 @@ pytest --durations=10
 ```python
 import pytest
 from unittest.mock import Mock, patch
-from manga_manager.my_module import MyClass, my_function
+from modules.my_module import MyClass, my_function
 
 class TestMyClass:
     """Tests for MyClass."""
@@ -224,7 +224,7 @@ def test_reproduce_bug_123(self):
 
 ```bash
 # Generate HTML coverage report
-pytest --cov=manga_manager --cov-report=html
+pytest --cov=modules --cov-report=html
 # Open htmlcov/index.html in browser
 ```
 
@@ -242,7 +242,7 @@ pytest --cov=manga_manager --cov-report=html
   run: |
     pip install -r requirements.txt
     pip install pytest pytest-cov
-    pytest --cov=manga_manager --cov-report=xml
+    pytest --cov=modules --cov-report=xml
 ```
 
 ## 🐛 Common Problems and Solutions

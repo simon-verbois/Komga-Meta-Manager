@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List
 
-from manga_manager.cache import Cache
-from manga_manager.models import AniListMedia
+from modules.cache import Cache
+from modules.models import AniListMedia
 
 logger = logging.getLogger(__name__)
 

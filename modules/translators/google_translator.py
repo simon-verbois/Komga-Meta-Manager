@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from googletrans import Translator as GoogletransTranslator, LANGUAGES
 from .base import Translator
-from manga_manager.constants import (
+from modules.constants import (
     TRANSLATIONS_CONFIG_FILE,
     TRANSLATION_CACHE_PATH,
     CACHE_SAVE_INTERVAL

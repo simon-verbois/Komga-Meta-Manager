@@ -5,7 +5,7 @@
 The project follows a modular architecture with clear separation of responsibilities:
 
 ```
-src/manga_manager/
+modules/
 ├── constants.py          # Centralized constants
 ├── config.py             # Configuration and validation
 ├── main.py               # Main entry point
@@ -48,7 +48,7 @@ pytest
 pytest tests/test_processor.py
 
 # With coverage
-pytest --cov=manga_manager --cov-report=html
+pytest --cov=modules --cov-report=html
 
 # Slow tests only
 pytest -m slow
@@ -172,10 +172,10 @@ To test locally:
 
 ```bash
 # Dry-run mode
-python -m manga_manager.main
+python -m modules.main
 
 # With custom configuration
-python -m manga_manager.main --config /path/to/config.yml
+python -m modules.main --config /path/to/config.yml
 ```
 
 ## 📋 Best Practices
