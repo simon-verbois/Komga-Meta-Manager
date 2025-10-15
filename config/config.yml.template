@@ -34,6 +34,13 @@ processing:
     status: true
     age_rating: true
     cover_image: true
+  remove_fields:
+    summary: false
+    genres: false
+    tags: false
+    status: false
+    age_rating: false
+    cover_image: false
 
 translation:
   enabled: true

@@ -143,6 +143,17 @@ class ProcessingMetrics:
             self.metadata_updates[field_type] += 1
         else:
             self.metadata_updates[field_type] = 1
+
+    def add_metadata_removal(self, field_type: str):
+        """Record a metadata field removal."""
+        if not hasattr(self, 'metadata_removals'):
+            self.metadata_removals = {
+                'summary': 0, 'genres': 0, 'tags': 0, 'status': 0, 'age_rating': 0, 'cover_image': 0
+            }
+        if field_type in self.metadata_removals:
+            self.metadata_removals[field_type] += 1
+        else:
+            self.metadata_removals[field_type] = 1
     
     def add_translation(self, target_language: str, manual: bool = False):
         """Record a translation being performed."""
@@ -247,6 +258,15 @@ class ProcessingMetrics:
                     logger.info(f"    {field}: {count}")
         else:
             logger.info("  No metadata updates performed")
+
+        # Metadata removals
+        if hasattr(self, 'metadata_removals'):
+            total_removals = sum(self.metadata_removals.values())
+            if total_removals > 0:
+                logger.info(f"  Total metadata fields removed: {total_removals}")
+                for field, count in self.metadata_removals.items():
+                    if count > 0:
+                        logger.info(f"    {field}: {count}")
         logger.info("")
         
         # Translation statistics

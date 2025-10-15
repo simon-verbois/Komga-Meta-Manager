@@ -60,6 +60,7 @@ class ProcessingConfig(BaseModel):
     force_unlock: bool = False
     exclude_series: List[str] = Field(default_factory=list)
     update_fields: UpdateFlags = Field(default_factory=UpdateFlags)
+    remove_fields: UpdateFlags = Field(default_factory=UpdateFlags)
 
 class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""

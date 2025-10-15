@@ -64,6 +64,7 @@ The table below explains every parameter in the `config.yml` file.
 | | **`force_unlock`** | Boolean | `false` | If **`true`**, the script will automatically **unlock** any locked metadata fields in Komga before updating them. This allows for a complete refresh of metadata. |
 | | **`exclude_series`** | List of Strings | `[]` | A list of exact series titles to **exclude** from processing. |
 | | **`update_fields`** | List of Boolean | `[]` | A list of all supported fields, activate those you want with **true**. |
+| **`remove_fields`** | List of Boolean | `[]` | A list of all supported fields, activate those you want to **remove** with **true**. Note: Takes priority over `update_fields`. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
 | | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
 | | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. You can get one [here](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans). |

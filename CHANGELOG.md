@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Metadata provider cache system**
 - **Settings to select which fields should be updated**
 - **Ability to update cover image**
+- **Field removal functionality**: Added `remove_fields` configuration option to completely clear metadata fields
+  - Supports all standard fields (summary, genres, tags, status, age_rating, cover_image)
+  - Takes priority over update_fields configuration
+  - Respects force_unlock settings for locked fields
+  - Includes dry-run support and comprehensive logging
 
 ### Changed
 - **Complete project structure refactoring**:
