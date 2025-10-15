@@ -5,26 +5,30 @@ Translator implementation using the DeepL API.
 import logging
 import json
 import backoff
+from pathlib import Path
 import deepl
 import yaml
 from .base import Translator
 from ..config import DeepLConfig
+from modules.constants import (
+    TRANSLATIONS_CONFIG_FILE,
+    TRANSLATION_CACHE_PATH,
+    CACHE_SAVE_INTERVAL
+)
 
 logger = logging.getLogger(__name__)
-TRANSLATIONS_CONFIG_PATH = "/config/translations.yml"
-TRANSLATION_CACHE_PATH = "/config/cache/translation_cache.json"
 
 def load_manual_translations() -> dict:
     """Loads the manual translations YAML file if it exists."""
     try:
-        with open(TRANSLATIONS_CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(TRANSLATIONS_CONFIG_FILE, "r", encoding="utf-8") as f:
             translations = yaml.safe_load(f)
             if isinstance(translations, dict):
-                logger.info(f"Successfully loaded manual translations from {TRANSLATIONS_CONFIG_PATH}")
+                logger.info(f"Successfully loaded manual translations from {TRANSLATIONS_CONFIG_FILE}")
                 return translations
             logger.warning("Manual translations file is not a valid dictionary. Ignoring.")
     except FileNotFoundError:
-        logger.info(f"No manual translations file found at '{TRANSLATIONS_CONFIG_PATH}', skipping.")
+        logger.info(f"No manual translations file found at '{TRANSLATIONS_CONFIG_FILE}', skipping.")
     except Exception as e:
         logger.error(f"Failed to load or parse manual translations file: {e}")
     return {}
@@ -40,11 +44,13 @@ class DeepLTranslator(Translator):
             self.cache = self._load_cache_from_disk()
             self.cache_hits = 0
             self.cache_misses = 0
+            self.unsaved_changes = 0
             logger.info("DeepL Translator initialized successfully with persistent cache.")
         except Exception as e:
             logger.error(f"Failed to initialize DeepL Translator: {e}")
             self.translator = None
             self.cache = {}
+            self.unsaved_changes = 0
 
     def _load_cache_from_disk(self) -> dict:
         """Loads the translation cache from a JSON file."""
@@ -61,20 +67,45 @@ class DeepLTranslator(Translator):
             return {}
 
     def save_cache_to_disk(self):
-        """Saves the in-memory translation cache to a JSON file."""
+        """
+        Save the in-memory translation cache to a JSON file.
+
+        This method provides atomic writes by writing to a temporary file
+        first, then renaming it to avoid corruption if the process is interrupted.
+
+        Note:
+            Resets the unsaved_changes counter to 0 after successful save.
+        """
         if not self.cache:
             logger.info("Translation cache is empty. Nothing to save.")
             return
-        
+
         try:
-            with open(TRANSLATION_CACHE_PATH, 'w', encoding='utf-8') as f:
+            # Ensure cache directory exists
+            TRANSLATION_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write to temporary file first for atomic writes
+            temp_path = TRANSLATION_CACHE_PATH.with_suffix('.tmp')
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(self.cache, f, indent=4, ensure_ascii=False, sort_keys=True)
-                logger.info(f"Successfully saved {len(self.cache)} translations to persistent cache.")
+
+            # Atomic rename
+            temp_path.replace(TRANSLATION_CACHE_PATH)
+
+            logger.info(f"Successfully saved {len(self.cache)} translations to persistent cache.")
+            self.unsaved_changes = 0
+
         except IOError as e:
-            logger.error(f"Could not write to persistent cache file: {e}")
+            logger.error(f"Could not write to persistent cache file at {TRANSLATION_CACHE_PATH}: {e}")
+            # Don't reset unsaved_changes on failure so we try again later
 
     def log_cache_summary(self):
-        """Logs the summary of cache usage for the current session."""
+        """
+        Log comprehensive cache usage statistics for the current session.
+
+        Provides insights into cache effectiveness including hit ratio,
+        total translations performed, and API calls avoided.
+        """
         total_lookups = self.cache_hits + self.cache_misses
         if total_lookups > 0:
             hit_ratio = (self.cache_hits / total_lookups) * 100
@@ -82,8 +113,12 @@ class DeepLTranslator(Translator):
                 f"Translation Cache Summary (this session): "
                 f"{self.cache_hits} hits, {self.cache_misses} misses "
                 f"({hit_ratio:.2f}% hit ratio). "
-                f"Avoided {self.cache_hits} API calls."
+                f"Avoided {self.cache_hits} API calls. "
+                f"Total cache size: {len(self.cache)} entries. "
+                f"Unsaved changes: {self.unsaved_changes}."
             )
+        else:
+            logger.info("No translation lookups performed in this session.")
 
     def translate(self, text: str, target_language: str) -> str:
         """
@@ -111,12 +146,31 @@ class DeepLTranslator(Translator):
         try:
             translated_text = self._translate_with_retry(text, target_language)
             self.cache[cache_key] = translated_text
+            self.unsaved_changes += 1
+            self._autosave_cache()  # Periodic save
             return translated_text
         except Exception as e:
             logger.error(f"Translation failed permanently for '{text}' after multiple retries: {e}")
             return text
 
-    @backoff.on_exception(backoff.expo, deepl.DeepLException, max_tries=3, logger=logger)
+    def _should_save_cache(self) -> bool:
+        """Check if the cache should be saved based on the number of unsaved changes."""
+        return self.unsaved_changes >= CACHE_SAVE_INTERVAL
+
+    def _autosave_cache(self):
+        """Automatically save cache if enough changes have accumulated."""
+        if self._should_save_cache():
+            logger.debug(f"Auto-saving cache after {self.unsaved_changes} changes")
+            self.save_cache_to_disk()
+
+    def is_not_retryable(e):
+        return False
+
+    @backoff.on_exception(backoff.expo,
+                          deepl.DeepLException,
+                          max_tries=3,
+                          giveup=is_not_retryable,
+                          logger=logger)
     def _translate_with_retry(self, text: str, target_language: str) -> str:
         """
         Protected method that performs the translation and is decorated for retries.

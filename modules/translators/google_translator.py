@@ -209,10 +209,11 @@ class GoogleTranslator(Translator):
             return text
             
         # Check persistent cache
-        if text in self.cache:
+        cache_key = f"{target_language}:{text}"
+        if cache_key in self.cache:
             self.cache_hits += 1
-            logger.debug(f"Cache hit for '{text}' -> '{self.cache[text]}'")
-            return self.cache[text]
+            logger.debug(f"Cache hit for '{text}' -> '{self.cache[cache_key]}'")
+            return self.cache[cache_key]
 
         # Cache miss - call API
         self.cache_misses += 1
@@ -220,7 +221,7 @@ class GoogleTranslator(Translator):
         
         try:
             translated_text = self._translate_with_retry(text, target_language)
-            self.cache[text] = translated_text
+            self.cache[cache_key] = translated_text
             self.unsaved_changes += 1
             self._autosave_cache()  # Periodic save
             return translated_text
