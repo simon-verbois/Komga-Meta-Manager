@@ -52,6 +52,9 @@ class AniListCoverImage(BaseModel):
     large: Optional[str] = None
     medium: Optional[str] = None
 
+class AniListName(BaseModel):
+    full: Optional[str] = None
+
 class AniListStaff(BaseModel):
     node: AniListName
     role: str
