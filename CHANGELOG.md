@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker configuration**: Updated Dockerfile to reflect new `modules/` structure
   - Changed source copy path from `./src/manga_manager` to `./modules`
   - Updated entrypoint from `manga_manager.main` to `modules.main`
+  - Fixed remaining internal imports in `main.py`
 
 ## [0.2.0] - 2025-10-14
 

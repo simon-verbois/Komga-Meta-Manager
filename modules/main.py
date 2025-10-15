@@ -5,8 +5,8 @@ Main entry point for the Manga Manager application.
 import logging
 import time
 import schedule
-from manga_manager.config import load_config, AppConfig
-from manga_manager.processor import process_libraries
+from modules.config import load_config, AppConfig
+from modules.processor import process_libraries
 
 def setup_logging(debug: bool = False):
     """Configures the root logger."""
