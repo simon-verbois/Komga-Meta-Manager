@@ -99,7 +99,7 @@ class AnilistProvider(MetadataProvider):
                             large
                             medium
                         }
-                        staff(perPage: 5, sort: [RELEVANCE]) {
+                        staff(perPage: 20, sort: [RELEVANCE]) {
                             edges {
                                 node {
                                     name {
