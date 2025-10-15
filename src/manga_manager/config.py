@@ -59,7 +59,6 @@ class ProcessingConfig(BaseModel):
     overwrite_existing: bool = False
     force_unlock: bool = False
     exclude_series: List[str] = Field(default_factory=list)
-    skip_series_with_summary: bool = False
     update_fields: UpdateFlags = Field(default_factory=UpdateFlags)
 
 class DeepLConfig(BaseModel):

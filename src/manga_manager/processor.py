@@ -152,10 +152,6 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
                 logger.info(f"Skipping series '{series.name}' as it is in the exclude list.")
                 continue
             
-            if config.processing.skip_series_with_summary and series.metadata.summary:
-                logger.info(f"Skipping series '{series.name}' as it already has a summary.")
-                continue
-
             processed_count += 1
             proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
             if config.system.dry_run and proposed_changes:

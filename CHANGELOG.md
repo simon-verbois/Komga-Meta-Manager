@@ -13,6 +13,7 @@
 ### Fixed
 
 ### Removed
+- Remove skip_series_with_summary settings, replaced by exclude_series
 
 
 ## [0.2.0] - 2025-10-14

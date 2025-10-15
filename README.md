@@ -60,12 +60,12 @@ The table below explains every parameter in the `config.yml` file.
 | **`processing`** | **`overwrite_existing`** | Boolean | `false` | If **`true`**, fetched metadata will **overwrite** any existing Komga metadata. If **`false`**, it only fills in fields that are currently empty or unlocked. |
 | | **`force_unlock`** | Boolean | `false` | If **`true`**, the script will automatically **unlock** any locked metadata fields in Komga before updating them. This allows for a complete refresh of metadata. |
 | | **`exclude_series`** | List of Strings | `[]` | A list of exact series titles to **exclude** from processing. |
-| | **`skip_series_with_summary`** | Boolean | `false` | If **`true`**, the script will **skip** any series that already has a summary. |
+| | **`update_fields`** | List of Boolean | `[]` | A list of all supported fields, activate those you want with **true**. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
-| | **`provider`** | String | `"deepl"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
+| | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
 | | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. You can get one [here](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans). |
 | | **`target_language`** | String | `"fr"` | The ISO 639-1 code for the language you want to translate to (e.g., `fr`, `en`, `es`). |
-
+*Deepl will return a better result, but need an API key to work.*
 
 ### 2\. Run with Docker Compose
 

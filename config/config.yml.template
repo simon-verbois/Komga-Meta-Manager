@@ -27,7 +27,6 @@ processing:
   exclude_series:
     - "Some Manga Title"
     - "Another Manga Title"
-  skip_series_with_summary: false
   update_fields:
     summary: true
     genres: true
