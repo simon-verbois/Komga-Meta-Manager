@@ -259,11 +259,15 @@ def _update_authors(payload: Dict, series: KomgaSeries, best_match: AniListMedia
         logger.debug("No staff data found in AniList response")
         return None
 
-    logger.debug(f"Found {len(best_match.staff)} staff entries in AniList")
+    if not best_match.staff or not best_match.staff.edges:
+        logger.debug("No staff data found in AniList staff edges")
+        return None
+
+    logger.debug(f"Found {len(best_match.staff.edges)} staff entries in AniList")
 
     # Extract author names from staff data (prioritize Story, Art roles)
     authors = []
-    for staff_edge in best_match.staff:
+    for staff_edge in best_match.staff.edges:
         logger.debug(f"Processing staff: {staff_edge}")
         if staff_edge.node.name and staff_edge.node.name.full:
             name = staff_edge.node.name.full
