@@ -330,7 +330,7 @@ def process_single_series(
     """
     logger.info(f"--- Processing Series: {series.name} ---")
 
-    candidates = provider.search(series.name)
+    candidates = provider.search(series.name, config)
     best_match = choose_best_match(series.name, candidates, config.provider.min_score)
 
     if not best_match:
