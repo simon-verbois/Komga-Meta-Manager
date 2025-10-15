@@ -20,7 +20,7 @@ from manga_manager.constants import (
     RETRY_BACKOFF_FACTOR,
     KOMGA_SERIES_PAGE_SIZE
 )
-from manga_manager.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException
+from manga_manager.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException, circuit_breaker_factory
 
 logger = logging.getLogger(__name__)
 
