@@ -6,6 +6,7 @@ from typing import List
 
 from modules.cache import Cache
 from modules.models import AniListMedia
+from modules.utils import load_app_version
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,8 @@ class MetadataProvider(ABC):
 
     def __init__(self, cache_dir: Path, cache_ttl_hours: int):
         provider_name = self.__class__.__name__.lower().replace("provider", "")
-        self.cache = Cache(provider_name, cache_dir, cache_ttl_hours)
+        current_version = load_app_version()
+        self.cache = Cache(provider_name, cache_dir, cache_ttl_hours, is_provider_cache=True, current_version=current_version)
 
     @abstractmethod
     def _perform_search(self, search_term: str) -> List[AniListMedia]:

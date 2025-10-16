@@ -3,6 +3,10 @@
 Utility functions for the Manga Manager.
 """
 import re
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 def clean_html(raw_html: str) -> str:
     """
@@ -38,3 +42,27 @@ def clean_html(raw_html: str) -> str:
     # Clean up excess whitespace and newlines from the start and end
     return text.strip()
 
+
+def load_app_version() -> str:
+    """
+    Loads the application version from the VERSION file.
+
+    Returns:
+        The version string, or "unknown" if the file cannot be read.
+    """
+    from modules.constants import VERSION_FILE
+
+    try:
+        with open(VERSION_FILE, 'r', encoding='utf-8') as f:
+            version = f.read().strip()
+            if not version:
+                logger.warning("VERSION file is empty. Using 'unknown' as default.")
+                return "unknown"
+            logger.info(f"Application version loaded: {version}")
+            return version
+    except FileNotFoundError:
+        logger.warning(f"VERSION file not found at {VERSION_FILE}. Using 'unknown' as default.")
+        return "unknown"
+    except Exception as e:
+        logger.error(f"Error reading VERSION file: {e}. Using 'unknown' as default.")
+        return "unknown"

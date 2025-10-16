@@ -34,6 +34,7 @@ CACHE_DIR = CONFIG_DIR / "cache"
 CONFIG_FILE = CONFIG_DIR / "config.yml"
 TRANSLATIONS_CONFIG_FILE = CONFIG_DIR / "translations.yml"
 TRANSLATION_CACHE_PATH = CACHE_DIR / TRANSLATION_CACHE_FILENAME
+VERSION_FILE = Path("./VERSION")
 
 # AniList Status Mapping
 ANILIST_STATUS_TO_KOMGA = {
@@ -48,7 +49,6 @@ LOG_FORMAT = '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s'
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # Circuit Breaker Defaults - Technical resilience settings
-# These are internal technical parameters, not user configuration
 CIRCUIT_BREAKER_DEFAULTS = {
     'komga': {
         'failure_threshold': 5,
@@ -61,8 +61,8 @@ CIRCUIT_BREAKER_DEFAULTS = {
         'success_threshold': 3
     },
     'translation': {
-        'failure_threshold': 3,  # More aggressive - translations are often rate-limited
-        'recovery_timeout': 30,  # Shorter recovery - translation services recover faster
+        'failure_threshold': 3,
+        'recovery_timeout': 30,
         'success_threshold': 2
     }
 }

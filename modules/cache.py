@@ -14,11 +14,20 @@ class Cache:
     """
     A simple file-based cache that stores key-value pairs with timestamps
     and supports a Time-To-Live (TTL) for cache entries.
+    For providers, it also supports version checking to invalidate cache
+    on version upgrades.
     """
-    def __init__(self, cache_name: str, cache_dir: Path, ttl_hours: int):
-        self.cache_path = cache_dir / f"{cache_name}_cache.json"
+    def __init__(self, cache_name: str, cache_dir: Path, ttl_hours: int, is_provider_cache: bool = False, current_version: str = None):
+        # Configure cache filename based on type
+        if is_provider_cache:
+            self.cache_path = cache_dir / f"metadata_provider_{cache_name}_cache.json"
+        else:
+            self.cache_path = cache_dir / f"{cache_name}_cache.json"
+
         self.ttl_seconds = ttl_hours * 3600
         self.cache: Dict[str, Dict[str, Any]] = {}
+        self.is_provider_cache = is_provider_cache
+        self.current_version = current_version
         self._load_from_disk()
 
     def _load_from_disk(self):
@@ -26,7 +35,27 @@ class Cache:
         if self.cache_path.exists():
             try:
                 with open(self.cache_path, 'r', encoding='utf-8') as f:
-                    self.cache = json.load(f)
+                    data = json.load(f)
+
+                # Check version compatibility for provider caches
+                if self.is_provider_cache and self.current_version:
+                    metadata = data.get('_metadata', {})
+                    cached_version = metadata.get('version')
+
+                    if cached_version != self.current_version:
+                        logger.warning(f"Cache version mismatch: cached={cached_version}, current={self.current_version}")
+                        logger.warning(f"Cache at {self.cache_path} will be invalidated due to version upgrade.")
+                        # Remove the old cache file
+                        self.cache_path.unlink(missing_ok=True)
+                        self.cache = {}
+                        return
+                    else:
+                        logger.info(f"Cache version check passed: {cached_version}")
+
+                    # Remove metadata from cache data to get pure cache entries
+                    data.pop('_metadata', None)
+
+                self.cache = data
                 logger.info(f"Successfully loaded cache for '{self.cache_path.name}' with {len(self.cache)} entries.")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load cache file at {self.cache_path}. A new one will be created. Error: {e}")
@@ -71,8 +100,18 @@ class Cache:
     def save_to_disk(self):
         """Saves the current cache state to a JSON file."""
         try:
+            # Prepare data to save
+            data_to_save = self.cache.copy()
+
+            # Add metadata for provider caches
+            if self.is_provider_cache and self.current_version:
+                data_to_save['_metadata'] = {
+                    'version': self.current_version,
+                    'created_at': time.time()
+                }
+
             with open(self.cache_path, 'w', encoding='utf-8') as f:
-                json.dump(self.cache, f, indent=2, ensure_ascii=False)
+                json.dump(data_to_save, f, indent=2, ensure_ascii=False)
             logger.info(f"Successfully saved cache to {self.cache_path}.")
         except IOError as e:
             logger.error(f"Failed to save cache to {self.cache_path}. Error: {e}")
