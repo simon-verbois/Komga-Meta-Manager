@@ -88,6 +88,16 @@ class AnilistProvider(MetadataProvider):
                         description(asHtml: false)
                         status
                         genres
+                        staff {
+                            edges {
+                                role
+                                node {
+                                    name {
+                                        full
+                                    }
+                                }
+                            }
+                        }
                         popularity
                         tags {
                             name

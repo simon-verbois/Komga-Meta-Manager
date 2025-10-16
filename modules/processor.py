@@ -11,7 +11,7 @@ from modules.komga_client import KomgaClient
 from modules.providers import get_provider
 from modules.providers.base import MetadataProvider
 from modules.translators import get_translator, Translator
-from modules.models import KomgaSeries, AniListMedia
+from modules.models import KomgaSeries, AniListMedia, KomgaBook
 from modules.utils import clean_html
 from thefuzz import fuzz
 
@@ -329,6 +329,146 @@ def _remove_cover_image(series: KomgaSeries, config: AppConfig) -> Optional[str]
         return "- Cover Image: Removal not supported by Komga API."
     return None
 
+def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: List[str], komga_client: KomgaClient) -> bool:
+    """
+    Remove authors from all books in the series if requested in config.
+
+    Args:
+        books: List of books in the series
+        config: Application configuration
+        dry_run_changes: List to collect change descriptions for dry run
+        komga_client: Komga client instance
+
+    Returns:
+        True if changes were made or would be made, False otherwise
+    """
+    if not config.processing.remove_fields.authors:
+        return False
+
+    has_changes = False
+    for book in books:
+        metadata = book.metadata
+        if should_remove_field(metadata.authors, metadata.authors_lock, config):
+            if config.system.dry_run:
+                dry_run_changes.append(f"- Book '{book.name}' Authors: Will be removed.")
+            else:
+                payload = {'authors': []}
+                if metadata.authors_lock and config.processing.force_unlock:
+                    payload['authorsLock'] = False
+
+
+                success = komga_client.update_book_metadata(book.id, payload)
+                if success:
+                    logger.debug(f"Successfully removed authors from book '{book.name}'")
+                else:
+                    logger.error(f"Failed to remove authors from book '{book.name}'")
+            has_changes = True
+
+    return has_changes
+
+def is_story_writer_role(role: str) -> bool:
+    """Check if a role indicates story writing (case-insensitive match for 'story')."""
+    return 'story' in role.lower()
+
+def _update_authors(books: List[KomgaBook], best_match: AniListMedia, config: AppConfig, dry_run_changes: List[str], komga_client: KomgaClient) -> bool:
+    """
+    Update authors for all books in the series from AniList staff data.
+
+    Args:
+        books: List of books in the series
+        best_match: AniList media match with staff information
+        config: Application configuration
+        dry_run_changes: List to collect change descriptions for dry run
+        komga_client: Komga client instance
+
+    Returns:
+        True if changes were made or would be made, False otherwise
+    """
+    logger.debug(f"_update_authors: Starting author update processing for {len(books)} books")
+    logger.debug(f"_update_authors: AniList media ID: {best_match.id}, title: {best_match.title.romaji or best_match.title.english}")
+    logger.debug(f"_update_authors: config.processing.update_fields.authors = {config.processing.update_fields.authors}")
+
+    if not config.processing.update_fields.authors:
+        logger.debug("_update_authors: Authors updates disabled in config")
+        return False
+
+    if not best_match.staff or not best_match.staff.edges:
+        logger.debug(f"_update_authors: No staff edges found for AniList media {best_match.id}")
+        logger.debug(f"_update_authors: best_match.staff = {best_match.staff}")
+        return False
+
+    logger.debug(f"_update_authors: Found {len(best_match.staff.edges)} staff edges")
+
+    # Extract authors with story writing roles from AniList staff
+    story_art_authors = []
+    for edge in best_match.staff.edges:
+        logger.debug(f"_update_authors: Processing staff edge with role '{edge.role}' and name '{edge.node.name.full if edge.node.name else None}'")
+        if is_story_writer_role(edge.role) and edge.node.name.full:
+            story_art_authors.append(edge.node.name.full)
+            logger.debug(f"_update_authors: Added author '{edge.node.name.full}' with role '{edge.role}'")
+
+    # Sort authors alphabetically
+    story_art_authors = sorted(story_art_authors)
+    logger.debug(f"_update_authors: Extracted {len(story_art_authors)} story writers: {story_art_authors}")
+
+    if not story_art_authors:
+        logger.debug("_update_authors: No story writers found")
+        return False
+
+    # Create the authors list in Komga format
+    komga_authors = [{"name": author, "role": "writer"} for author in story_art_authors]
+    logger.debug(f"_update_authors: Prepared Komga authors format: {komga_authors}")
+
+    has_changes = False
+    for book in books:
+        logger.debug(f"_update_authors: Processing book '{book.name}' (ID: {book.id})")
+        logger.debug(f"_update_authors: Book current authors: {book.metadata.authors}")
+        logger.debug(f"_update_authors: Book authors lock: {book.metadata.authors_lock}")
+
+        # Check update conditions
+        should_update = should_update_field(book.metadata.authors, book.metadata.authors_lock, config)
+        logger.debug(f"_update_authors: should_update_field returned {should_update}")
+
+        if should_update:
+            # Check if the authors list is different
+            current_authors = [{'name': a['name'], 'role': a['role']} for a in book.metadata.authors if 'name' in a and 'role' in a]
+            new_authors = [{'name': a['name'], 'role': a['role']} for a in komga_authors]
+
+            logger.debug(f"_update_authors: Current normalized authors: {current_authors}")
+            logger.debug(f"_update_authors: New normalized authors: {new_authors}")
+
+            current_set = set(tuple(a.items()) for a in current_authors)
+            new_set = set(tuple(a.items()) for a in new_authors)
+
+            authors_different = current_set != new_set
+            logger.debug(f"_update_authors: Authors are different: {authors_different}")
+
+            if authors_different:
+                if config.system.dry_run:
+                    dry_run_changes.append(f"- Book '{book.name}' Authors: Will be set to {[a['name'] for a in komga_authors]}")
+                    logger.debug(f"_update_authors: [DRY-RUN] Would update book '{book.name}' authors to {komga_authors}")
+                else:
+                    payload = {'authors': komga_authors}
+                    if book.metadata.authors_lock and config.processing.force_unlock:
+                        payload['authorsLock'] = False
+                        logger.debug(f"_update_authors: Force unlocking authors lock for book '{book.name}'")
+
+                    logger.debug(f"_update_authors: Updating book '{book.id}' with payload: {payload}")
+                    success = komga_client.update_book_metadata(book.id, payload)
+                    if success:
+                        logger.debug(f"Successfully updated authors for book '{book.name}': {[a['name'] for a in komga_authors]}")
+                        logger.info(f"Updated authors for book '{book.name}': {[a['name'] for a in komga_authors]}")
+                    else:
+                        logger.error(f"Failed to update authors for book '{book.name}'")
+                has_changes = True
+            else:
+                logger.debug(f"_update_authors: No author changes needed for book '{book.name}'")
+        else:
+            logger.debug(f"_update_authors: Skipping author update for book '{book.name}' (locked or already set)")
+
+    logger.debug(f"_update_authors: Finished processing, has_changes = {has_changes}")
+    return has_changes
+
 def should_remove_field(current_value, is_locked: bool, config: AppConfig) -> bool:
     """Helper function to determine if a metadata field should be removed."""
     if is_locked and not config.processing.force_unlock:
@@ -348,11 +488,17 @@ def process_single_series(
     In normal mode, it applies changes and returns None.
     """
     logger.info(f"--- Processing Series: {series.name} ---")
-    
+
     payload = {}
     change_descriptions: List[str] = []
 
     # 1. Handle removals first, as they have priority and are independent of finding a match.
+    # Get books in series for author removals that need to be done per book
+    books = []
+    if config.processing.remove_fields.authors:
+        books = komga_client.get_books_in_series(series.id, series.name)
+        logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author removal")
+
     remove_fns = [
         (_remove_summary, series, config),
         (_remove_genres, series, config),
@@ -367,13 +513,21 @@ def process_single_series(
     if cover_remove_change := _remove_cover_image(series, config):
         change_descriptions.append(cover_remove_change)
 
+    if _remove_authors(books, config, change_descriptions, komga_client):
+        pass  # Changes are handled inside the function
+
     # 2. Search for a match to perform updates.
     candidates = provider.search(series.name)
     best_match = choose_best_match(series.name, candidates, config.provider.min_score)
 
     if best_match:
         logger.info(f"Found best match: '{best_match.title.english or best_match.title.romaji}' (ID: {best_match.id})")
-        
+
+        # Get books for author updates if not already retrieved
+        if not books and config.processing.update_fields.authors:
+            books = komga_client.get_books_in_series(series.id, series.name)
+            logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author updates")
+
         # 3. Handle updates only if a match was found and removal wasn't requested for the field.
         update_actions = [
             (not config.processing.remove_fields.summary, lambda: _update_summary(payload, series, best_match, config, translator)),
@@ -391,9 +545,14 @@ def process_single_series(
         if not config.processing.remove_fields.cover_image:
             if cover_change := _update_cover_image(series, best_match, config, komga_client):
                 change_descriptions.append(cover_change)
+
+        # Handle author updates for books
+        if not config.processing.remove_fields.authors:
+            if _update_authors(books, best_match, config, change_descriptions, komga_client):
+                pass  # Changes are handled inside the function
     else:
         logger.warning(f"No suitable match found for '{series.name}' on {type(provider).__name__}. Skipping metadata updates.")
-        
+
     # 4. Finalize based on accumulated changes.
     if not change_descriptions:
         logger.info("No metadata changes required for this series.")

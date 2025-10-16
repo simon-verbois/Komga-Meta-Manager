@@ -52,6 +52,7 @@ class UpdateFlags(BaseModel):
     tags: bool = True
     status: bool = True
     age_rating: bool = True
+    authors: bool = True
     cover_image: bool = True
 
 class ProcessingConfig(BaseModel):

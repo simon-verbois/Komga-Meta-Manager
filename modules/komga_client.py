@@ -12,7 +12,7 @@ from requests.exceptions import RequestException, Timeout, ConnectionError
 import urllib3
 
 from modules.config import KomgaConfig
-from modules.models import KomgaLibrary, KomgaSeries
+from modules.models import KomgaLibrary, KomgaSeries, KomgaBook
 from modules.constants import (
     KOMGA_API_V1_PATH,
     HTTP_TIMEOUTS,
@@ -284,6 +284,85 @@ class KomgaClient:
             return True
         
         logger.error(f"Failed to update metadata for series {series_id}")
+        return False
+
+    def get_books_in_series(self, series_id: str, series_name: str) -> List[KomgaBook]:
+        """
+        Fetch all books within a specific series, handling pagination.
+
+        This method automatically handles pagination to retrieve all books,
+        making multiple requests if necessary.
+
+        Args:
+            series_id: The ID of the series to fetch books from
+            series_name: The name of the series (used for logging only)
+
+        Returns:
+            A list of book objects, or an empty list if none are found or an error occurs
+
+        Examples:
+            >>> client.get_books_in_series("series1", "Naruto")
+            [KomgaBook(...), KomgaBook(...), ...]
+        """
+        all_books = []
+        page = 0
+        logger.info(f"Fetching books for series: '{series_name}' (ID: {series_id})...")
+
+        while True:
+            params = {
+                "page": page,
+                "size": KOMGA_SERIES_PAGE_SIZE  # Reuse the same page size constant
+            }
+            response_data = self._make_request("GET", f"series/{series_id}/books", params=params)
+
+            if not response_data or not isinstance(response_data, dict):
+                if page == 0:
+                    logger.error(f"Failed to fetch books from series '{series_name}'")
+                break
+
+            content = response_data.get("content", [])
+            if not content:
+                break
+
+            books_page = [KomgaBook(**book) for book in content]
+            all_books.extend(books_page)
+            logger.debug(f"Fetched page {page + 1} with {len(books_page)} books")
+
+            if response_data.get("last", True):
+                break
+            page += 1
+
+        logger.info(f"Found {len(all_books)} books in series '{series_name}'.")
+        return all_books
+
+    def update_book_metadata(self, book_id: str, payload: dict) -> bool:
+        """
+        Update the metadata for a specific book.
+
+        Args:
+            book_id: The ID of the book to update
+            payload: A dictionary containing the metadata fields to update.
+                     Can include: authors, tags, etc.
+
+        Returns:
+            True if the update was successful, False otherwise
+
+        Examples:
+            >>> client.update_book_metadata("book123", {
+            ...     "authors": [{"name": "Tatsuki Fujimoto", "role": "writer"}],
+            ...     "authorsLock": True
+            ... })
+            True
+        """
+        endpoint = f"books/{book_id}/metadata"
+        logger.debug(f"Updating metadata for book {book_id}: {list(payload.keys())}")
+        response = self._make_request("PATCH", endpoint, json_data=payload)
+
+        if response is not None:
+            logger.debug(f"Successfully updated metadata for book {book_id}")
+            return True
+
+        logger.error(f"Failed to update metadata for book {book_id}")
         return False
 
     def upload_series_poster(self, series_id: str, image_url: str) -> bool:

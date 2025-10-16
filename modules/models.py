@@ -2,7 +2,7 @@
 """
 Pydantic models for structuring data from APIs.
 """
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Union
 from pydantic import BaseModel, Field
 
 # --- Komga Models ---
@@ -40,6 +40,29 @@ class KomgaSeries(BaseModel):
     books_count: int = Field(..., alias='booksCount')
     metadata: KomgaSeriesMetadata
 
+class KomgaBookMetadata(BaseModel):
+    title: str
+    title_lock: bool = Field(..., alias='titleLock')
+    summary: str
+    summary_lock: bool = Field(..., alias='summaryLock')
+    number: Union[str, int]
+    number_lock: bool = Field(..., alias='numberLock')
+    number_sort: float = Field(..., alias='numberSort')
+    number_sort_lock: bool = Field(..., alias='numberSortLock')
+    release_date: Optional[str] = Field(None, alias='releaseDate')
+    release_date_lock: bool = Field(..., alias='releaseDateLock')
+    authors: List[dict] = Field(default_factory=list)
+    authors_lock: bool = Field(..., alias='authorsLock')
+    tags: Set[str] = set()
+    tags_lock: bool = Field(..., alias='tagsLock')
+
+class KomgaBook(BaseModel):
+    id: str
+    series_id: str = Field(..., alias='seriesId')
+    name: str
+    number: Union[str, int]
+    metadata: KomgaBookMetadata
+
 # --- AniList Models ---
 
 class AniListTitle(BaseModel):
@@ -52,6 +75,19 @@ class AniListCoverImage(BaseModel):
     large: Optional[str] = None
     medium: Optional[str] = None
 
+class AniListStaffName(BaseModel):
+    full: Optional[str] = None
+
+class AniListStaffNode(BaseModel):
+    name: AniListStaffName
+
+class AniListStaffEdge(BaseModel):
+    role: str
+    node: AniListStaffNode
+
+class AniListStaffResponse(BaseModel):
+    edges: Optional[List[AniListStaffEdge]] = Field(default_factory=list)
+
 class AniListMedia(BaseModel):
     id: int
     title: AniListTitle
@@ -59,6 +95,7 @@ class AniListMedia(BaseModel):
     status: Optional[str] = None
     genres: Optional[List[str]] = []
     tags: Optional[List[dict]] = []
+    staff: Optional[AniListStaffResponse] = None
     popularity: int = 0
     isAdult: bool = False
     coverImage: Optional[AniListCoverImage] = None

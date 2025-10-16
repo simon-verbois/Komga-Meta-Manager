@@ -44,6 +44,7 @@ processing:
     tags: false
     status: false
     age_rating: false
+    authors: false
 
 translation:
   enabled: true          # Enable metadata translation

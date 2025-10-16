@@ -21,6 +21,16 @@ class TestFieldRemoval:
                 tags=True,
                 status=True,
                 age_rating=True,
+                authors=True,
+                cover_image=False
+            ),
+            update_fields=UpdateFlags(
+                summary=True,
+                genres=True,
+                tags=True,
+                status=True,
+                age_rating=True,
+                authors=True,
                 cover_image=False
             ),
             force_unlock=True
@@ -140,6 +150,7 @@ class TestFieldRemoval:
 
         # Create komga client mock
         komga_client = Mock()
+        komga_client.get_books_in_series.return_value = []  # Return empty list for books
 
         # Series with existing metadata
         series_with_data = KomgaSeries(
