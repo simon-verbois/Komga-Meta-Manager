@@ -12,7 +12,7 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 
 ## ✨ Features
 
-* **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, **Tags**, and **Cover Images** for your Komga series from **AniList**.
+* **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, **Tags**, **Authors**, and **Cover Images** for your Komga series from **AniList**.
 * **Targeted Processing:** Only processes libraries you specify in the configuration.
 * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
 * **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
