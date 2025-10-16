@@ -8,6 +8,7 @@ schedule~=1.2.0
 deepl
 thefuzz
 python-Levenshtein
+colorama~=0.4.6
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-mock>=3.10.0

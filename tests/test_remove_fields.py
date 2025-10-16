@@ -1,11 +1,14 @@
 """
 Unit tests for field removal functionality in processor.py
 """
+import logging
 import pytest
 from unittest.mock import Mock, MagicMock
 from modules.config import ProcessingConfig, UpdateFlags, AppConfig, SystemConfig, ProviderConfig, KomgaConfig
 from modules.processor import _remove_summary, _remove_genres, _remove_tags, _remove_status, _remove_age_rating, process_single_series
 from modules.models import KomgaSeries, KomgaSeriesMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class TestFieldRemoval:

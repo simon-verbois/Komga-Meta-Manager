@@ -2,9 +2,12 @@
 """
 Tests for the processor module.
 """
+import logging
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from thefuzz import fuzz
+
+logger = logging.getLogger(__name__)
 
 from modules.processor import choose_best_match, should_update_field
 from modules.models import AniListMedia, AniListTitle

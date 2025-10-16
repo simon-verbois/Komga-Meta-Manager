@@ -21,8 +21,9 @@ from modules.constants import (
     KOMGA_SERIES_PAGE_SIZE
 )
 from modules.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException, circuit_breaker_factory
+from modules.output import get_output_manager
 
-logger = logging.getLogger(__name__)
+output_manager = get_output_manager()
 
 class KomgaClient:
     """
@@ -54,14 +55,14 @@ class KomgaClient:
         # Initialize circuit breaker with default configuration
         circuit_breaker_config = create_circuit_breaker_config('komga')
         self.circuit_breaker = circuit_breaker_factory.get_circuit_breaker(circuit_breaker_config)
-        logger.debug(f"Komga Client initialized with circuit breaker '{circuit_breaker_config.name}'")
+        output_manager.debug(f"Komga Client initialized with circuit breaker '{circuit_breaker_config.name}'")
 
         # Disable SSL warnings only if SSL verification is disabled
         if not self.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            logger.warning("SSL certificate verification is disabled. This is insecure and not recommended for production use.")
+            output_manager.warning("SSL certificate verification is disabled. This is insecure and not recommended for production use.", "warning")
 
-        logger.info(f"Komga Client initialized for URL: {self.base_url}")
+        output_manager.info(f"Komga Client initialized for URL: {self.base_url}", "api")
 
     def _is_retryable_error(self, exception: Exception) -> bool:
         """
@@ -112,12 +113,12 @@ class KomgaClient:
         url = f"{self.base_url}{KOMGA_API_V1_PATH}/{endpoint}"
         last_exception = None
 
-        # Wrap the entire request logic in circuit breaker if available
+            # Wrap the entire request logic in circuit breaker if available
         if self.circuit_breaker:
             try:
                 return self.circuit_breaker.call(self._make_request_with_retry, method, url, params, json_data)
             except Exception as e:
-                logger.error(f"Circuit breaker blocked or failed request to {url}: {e}")
+                output_manager.error(f"Circuit breaker blocked or failed request to {url}: {e}")
                 return None
 
         # Fallback to direct call without circuit breaker protection
@@ -128,7 +129,7 @@ class KomgaClient:
 
         for attempt in range(MAX_RETRIES):
             try:
-                logger.debug(f"Request attempt {attempt + 1}/{MAX_RETRIES}: {method} {url}")
+                output_manager.debug(f"Request attempt {attempt + 1}/{MAX_RETRIES}: {method} {url}")
 
                 response = self.session.request(
                     method,
@@ -145,7 +146,7 @@ class KomgaClient:
                 return response.json() if response.content else {}
 
             except json.JSONDecodeError as e:
-                logger.debug("API responded with success but no JSON body.")
+                output_manager.debug("API responded with success but no JSON body.")
                 return {}
 
             except RequestException as e:
@@ -157,25 +158,27 @@ class KomgaClient:
 
                     # Don't retry client errors (except 429 Too Many Requests)
                     if 400 <= status_code < 500 and status_code != 429:
-                        logger.error(f"Client error calling Komga API at {url}: {status_code} - {e}")
+                        output_manager.error(f"Client error calling Komga API at {url}: {status_code} - {e}", "error")
                         return None
 
                 # Check if we should retry
                 if not self._is_retryable_error(e):
-                    logger.error(f"Non-retryable error calling Komga API at {url}: {e}")
+                    output_manager.error(f"Non-retryable error calling Komga API at {url}: {e}", "error")
                     return None
 
                 # This is a retryable error
                 if attempt < MAX_RETRIES - 1:
                     wait_time = RETRY_BACKOFF_FACTOR ** attempt
-                    logger.warning(
+                    output_manager.warning(
                         f"Retryable error on attempt {attempt + 1}/{MAX_RETRIES} for {url}: {e}. "
-                        f"Waiting {wait_time}s before retry..."
+                        f"Waiting {wait_time}s before retry...",
+                        "warning"
                     )
                     time.sleep(wait_time)
                 else:
-                    logger.error(
-                        f"Request failed after {MAX_RETRIES} attempts for {url}: {e}"
+                    output_manager.error(
+                        f"Request failed after {MAX_RETRIES} attempts for {url}: {e}",
+                        "error"
                     )
         
         # All retries exhausted
@@ -194,14 +197,14 @@ class KomgaClient:
             >>> client.get_libraries()
             [KomgaLibrary(id='1', name='Manga'), KomgaLibrary(id='2', name='Comics')]
         """
-        logger.info("Fetching all libraries from Komga...")
+        output_manager.info("Fetching all libraries from Komga...", "api")
         response_data = self._make_request("GET", "libraries")
 
         if isinstance(response_data, list):
-            logger.info(f"Successfully retrieved {len(response_data)} libraries")
+            output_manager.info(f"Successfully retrieved {len(response_data)} libraries", "success")
             return [KomgaLibrary(**lib) for lib in response_data]
 
-        logger.error("Failed to retrieve libraries from Komga")
+        output_manager.error("Failed to retrieve libraries from Komga", "error")
         return []
 
     def get_series_in_library(self, library_id: str, library_name: str) -> List[KomgaSeries]:
@@ -225,7 +228,7 @@ class KomgaClient:
         """
         all_series = []
         page = 0
-        logger.info(f"Fetching series for library: '{library_name}' (ID: {library_id})...")
+        output_manager.info(f"Fetching series for library: '{library_name}' (ID: {library_id})...", "library")
 
         while True:
             params = {
@@ -237,7 +240,7 @@ class KomgaClient:
 
             if not response_data or not isinstance(response_data, dict):
                 if page == 0:
-                    logger.error(f"Failed to fetch series from library '{library_name}'")
+                    output_manager.error(f"Failed to fetch series from library '{library_name}'", "error")
                 break
 
             content = response_data.get("content", [])
@@ -246,13 +249,13 @@ class KomgaClient:
 
             series_page = [KomgaSeries(**series) for series in content]
             all_series.extend(series_page)
-            logger.debug(f"Fetched page {page + 1} with {len(series_page)} series")
+            output_manager.debug(f"Fetched page {page + 1} with {len(series_page)} series")
 
             if response_data.get("last", True):
                 break
             page += 1
-        
-        logger.info(f"Found {len(all_series)} series in library '{library_name}'.")
+
+        output_manager.info(f"Found {len(all_series)} series in library '{library_name}'.", "series")
         return all_series
 
     def update_series_metadata(self, series_id: str, payload: dict) -> bool:
@@ -276,14 +279,14 @@ class KomgaClient:
             True
         """
         endpoint = f"series/{series_id}/metadata"
-        logger.debug(f"Updating metadata for series {series_id}: {list(payload.keys())}")
+        output_manager.debug(f"Updating metadata for series {series_id}: {list(payload.keys())}")
         response = self._make_request("PATCH", endpoint, json_data=payload)
-        
+
         if response is not None:
-            logger.debug(f"Successfully updated metadata for series {series_id}")
+            output_manager.debug(f"Successfully updated metadata for series {series_id}")
             return True
-        
-        logger.error(f"Failed to update metadata for series {series_id}")
+
+        output_manager.error(f"Failed to update metadata for series {series_id}", "error")
         return False
 
     def get_books_in_series(self, series_id: str, series_name: str) -> List[KomgaBook]:
@@ -306,7 +309,7 @@ class KomgaClient:
         """
         all_books = []
         page = 0
-        logger.info(f"Fetching books for series: '{series_name}' (ID: {series_id})...")
+        output_manager.info(f"Fetching books for series: '{series_name}' (ID: {series_id})...", "series")
 
         while True:
             params = {
@@ -317,7 +320,7 @@ class KomgaClient:
 
             if not response_data or not isinstance(response_data, dict):
                 if page == 0:
-                    logger.error(f"Failed to fetch books from series '{series_name}'")
+                    output_manager.error(f"Failed to fetch books from series '{series_name}'", "error")
                 break
 
             content = response_data.get("content", [])
@@ -326,13 +329,13 @@ class KomgaClient:
 
             books_page = [KomgaBook(**book) for book in content]
             all_books.extend(books_page)
-            logger.debug(f"Fetched page {page + 1} with {len(books_page)} books")
+            output_manager.debug(f"Fetched page {page + 1} with {len(books_page)} books")
 
             if response_data.get("last", True):
                 break
             page += 1
 
-        logger.info(f"Found {len(all_books)} books in series '{series_name}'.")
+        output_manager.info(f"Found {len(all_books)} books in series '{series_name}'.", "book")
         return all_books
 
     def update_book_metadata(self, book_id: str, payload: dict) -> bool:
@@ -355,14 +358,14 @@ class KomgaClient:
             True
         """
         endpoint = f"books/{book_id}/metadata"
-        logger.debug(f"Updating metadata for book {book_id}: {list(payload.keys())}")
+        output_manager.debug(f"Updating metadata for book {book_id}: {list(payload.keys())}")
         response = self._make_request("PATCH", endpoint, json_data=payload)
 
         if response is not None:
-            logger.debug(f"Successfully updated metadata for book {book_id}")
+            output_manager.debug(f"Successfully updated metadata for book {book_id}")
             return True
 
-        logger.error(f"Failed to update metadata for book {book_id}")
+        output_manager.error(f"Failed to update metadata for book {book_id}", "error")
         return False
 
     def upload_series_poster(self, series_id: str, image_url: str) -> bool:
@@ -386,7 +389,7 @@ class KomgaClient:
         """
         try:
             # Download image with timeout
-            logger.debug(f"Downloading cover image from {image_url}")
+            output_manager.debug(f"Downloading cover image from {image_url}")
             image_response = self.session.get(
                 image_url,
                 stream=True,
@@ -400,7 +403,7 @@ class KomgaClient:
             url = f"{self.base_url}{KOMGA_API_V1_PATH}/series/{series_id}/thumbnails"
 
             # Upload to Komga with timeout
-            logger.debug(f"Uploading cover image for series {series_id}")
+            output_manager.debug(f"Uploading cover image for series {series_id}")
             api_response = self.session.post(
                 url,
                 headers=self.headers,
@@ -410,12 +413,12 @@ class KomgaClient:
             )
             api_response.raise_for_status()
 
-            logger.info(f"Successfully uploaded poster for series {series_id} from {image_url}")
+            output_manager.info(f"Successfully uploaded poster for series {series_id} from {image_url}", "success")
             return True
 
         except Timeout as e:
-            logger.error(f"Timeout while uploading poster for series {series_id} from {image_url}: {e}")
+            output_manager.error(f"Timeout while uploading poster for series {series_id} from {image_url}: {e}", "error")
             return False
         except RequestException as e:
-            logger.error(f"Failed to upload poster for series {series_id} from {image_url}: {e}")
+            output_manager.error(f"Failed to upload poster for series {series_id} from {image_url}: {e}", "error")
             return False

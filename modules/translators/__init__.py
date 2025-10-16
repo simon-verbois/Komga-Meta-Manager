@@ -3,13 +3,13 @@
 Translator module for handling metadata translation.
 This module acts as a factory for creating translator instances.
 """
-import logging
 from typing import Optional, Any
 from .base import Translator
 from .google_translator import GoogleTranslator
 from .deepl_translator import DeepLTranslator
+from modules.output import get_output_manager
 
-logger = logging.getLogger(__name__)
+output_manager = get_output_manager()
 
 def get_translator(provider: str, **kwargs: Any) -> Optional[Translator]:
     """
@@ -24,14 +24,14 @@ def get_translator(provider: str, **kwargs: Any) -> Optional[Translator]:
     """
     provider_lower = provider.lower()
     if provider_lower == 'google':
-        logger.info("Using Google Translate provider.")
+        output_manager.info("Using Google Translate provider.")
         return GoogleTranslator()
     elif provider_lower == 'deepl':
-        logger.info("Using DeepL provider.")
+        output_manager.info("Using DeepL provider.")
         if 'config' not in kwargs:
-            logger.error("DeepL config is required but was not provided.")
+            output_manager.error("DeepL config is required but was not provided.")
             return None
         return DeepLTranslator(config=kwargs['config'])
     else:
-        logger.warning(f"Unknown translation provider: '{provider}'. Translation will be disabled.")
+        output_manager.warning(f"Unknown translation provider: '{provider}'. Translation will be disabled.")
         return None

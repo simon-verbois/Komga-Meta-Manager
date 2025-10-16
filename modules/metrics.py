@@ -3,11 +3,11 @@
 Metrics collection and reporting for the Manga Manager application.
 """
 import time
-import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+from modules.output import get_output_manager
 
-logger = logging.getLogger(__name__)
+output_manager = get_output_manager()
 
 @dataclass
 class ProcessingMetrics:
@@ -72,7 +72,7 @@ class ProcessingMetrics:
     def add_library_processed(self, library_name: str):
         """Increment the libraries processed counter."""
         self.libraries_processed += 1
-        logger.debug(f"Libraries processed: {self.libraries_processed}/{self.libraries_total}")
+        output_manager.debug(f"Libraries processed: {self.libraries_processed}/{self.libraries_total}")
     
     def add_series_processed(self, series_name: str, success: bool = True, processing_time: float = 0.0):
         """Record processing of a single series."""
@@ -100,7 +100,7 @@ class ProcessingMetrics:
     def add_series_skipped(self, series_name: str):
         """Record a series that was skipped during processing."""
         self.series_skipped += 1
-        logger.debug(f"Series skipped: '{series_name}'")
+        output_manager.debug(f"Series skipped: '{series_name}'")
     
     def add_api_call(self, component: str, success: bool = True):
         """Record an API call for a specific component."""
@@ -117,7 +117,7 @@ class ProcessingMetrics:
             if not success:
                 self.translation_api_errors += 1
         else:
-            logger.warning(f"Unknown component '{component}' for API call tracking")
+            output_manager.warning(f"Unknown component '{component}' for API call tracking")
     
     def add_cache_hit(self, cache_type: str):
         """Record a cache hit."""
@@ -176,7 +176,7 @@ class ProcessingMetrics:
             'series_id': series_id
         }
         self.errors.append(error_entry)
-        logger.warning(f"Error recorded: {error_type} - {message}")
+        output_manager.warning(f"Error recorded: {error_type} - {message}")
     
     @property
     def session_duration(self) -> float:
@@ -212,102 +212,90 @@ class ProcessingMetrics:
             self.mark_session_complete()
         
         duration_minutes = self.session_duration / 60
-        logger.info("=" * 80)
-        logger.info("PROCESSING METRICS SUMMARY")
-        logger.info("=" * 80)
-        
-        logger.info(f"Session Duration: {duration_minutes:.2f} minutes")
-        logger.info("")
-        
+        output_manager.header("Processing Metrics Summary", level=1)
+
+        output_manager.info(f"Session Duration: {duration_minutes:.2f} minutes")
+
         # Library and series metrics
-        logger.info("COMPREHENSIVE PROCESSING STATISTICS:")
-        logger.info(f"  Libraries processed: {self.libraries_processed}/{self.libraries_total}")
-        logger.info(f"  Series processed: {self.series_processed}/{self.series_total}")
-        logger.info(f"  Series successful: {self.series_successful}")
-        logger.info(f"  Series failed: {self.series_failed}")
-        logger.info(f"  Series skipped: {self.series_skipped}")
+        output_manager.info("COMPREHENSIVE PROCESSING STATISTICS:")
+        output_manager.info(f"  Libraries processed: {self.libraries_processed}/{self.libraries_total}")
+        output_manager.info(f"  Series processed: {self.series_processed}/{self.series_total}")
+        output_manager.info(f"  Series successful: {self.series_successful}")
+        output_manager.info(f"  Series failed: {self.series_failed}")
+        output_manager.info(f"  Series skipped: {self.series_skipped}")
 
         if self.series_successful + self.series_failed > 0:
-            logger.info(f"  Success rate: {self.success_rate:.1f}%")
-        logger.info("")
-        
+            output_manager.info(f"  Success rate: {self.success_rate:.1f}%")
+
         # API call metrics
-        logger.info("API CALL STATISTICS:")
-        logger.info(f"  Komga API calls: {self.komga_api_calls} (errors: {self.komga_api_errors})")
-        logger.info(f"  AniList API calls: {self.anilist_api_calls} (errors: {self.anilist_api_errors})")
-        logger.info(f"  Translation API calls: {self.translation_api_calls} (errors: {self.translation_api_errors})")
-        logger.info("")
-        
+        output_manager.info("API CALL STATISTICS:")
+        output_manager.info(f"  Komga API calls: {self.komga_api_calls} (errors: {self.komga_api_errors})")
+        output_manager.info(f"  AniList API calls: {self.anilist_api_calls} (errors: {self.anilist_api_errors})")
+        output_manager.info(f"  Translation API calls: {self.translation_api_calls} (errors: {self.translation_api_errors})")
+
         # Cache metrics
-        logger.info("CACHE PERFORMANCE:")
+        output_manager.info("CACHE PERFORMANCE:")
         hit_ratios = self.cache_hit_ratio
         for cache_type, ratio in hit_ratios.items():
             hits = self.cache_hits.get(cache_type, 0)
             misses = self.cache_misses.get(cache_type, 0)
             size = self.cache_sizes.get(cache_type, 0)
-            logger.info(f"  {cache_type.title()} Cache: {ratio:.1f}% hit ratio ({hits}/{hits+misses} hits, size: {size})")
-        logger.info("")
-        
+            output_manager.info(f"  {cache_type.title()} Cache: {ratio:.1f}% hit ratio ({hits}/{hits+misses} hits, size: {size})")
+
         # Metadata updates
-        logger.info("METADATA UPDATE BREAKDOWN:")
+        output_manager.info("METADATA UPDATE BREAKDOWN:")
         total_updates = sum(self.metadata_updates.values())
         if total_updates > 0:
-            logger.info(f"  Total metadata fields updated: {total_updates}")
+            output_manager.info(f"  Total metadata fields updated: {total_updates}")
             for field, count in self.metadata_updates.items():
                 if count > 0:
-                    logger.info(f"    {field}: {count}")
+                    output_manager.info(f"    {field}: {count}")
         else:
-            logger.info("  No metadata updates performed")
+            output_manager.info("  No metadata updates performed")
 
         # Metadata removals
         if hasattr(self, 'metadata_removals'):
             total_removals = sum(self.metadata_removals.values())
             if total_removals > 0:
-                logger.info(f"  Total metadata fields removed: {total_removals}")
+                output_manager.info(f"  Total metadata fields removed: {total_removals}")
                 for field, count in self.metadata_removals.items():
                     if count > 0:
-                        logger.info(f"    {field}: {count}")
-        logger.info("")
-        
+                        output_manager.info(f"    {field}: {count}")
+
         # Translation statistics
-        logger.info("TRANSLATION STATISTICS:")
+        output_manager.info("TRANSLATION STATISTICS:")
         if self.translations_performed or self.manual_translations_used:
             total_translations = sum(self.translations_performed.values()) + sum(self.manual_translations_used.values())
-            logger.info(f"  Total translations performed: {total_translations}")
+            output_manager.info(f"  Total translations performed: {total_translations}")
 
             if self.manual_translations_used:
                 manual_total = sum(self.manual_translations_used.values())
-                logger.info(f"  Manual translations used: {manual_total}")
+                output_manager.info(f"  Manual translations used: {manual_total}")
 
             for lang in sorted(set(list(self.translations_performed.keys()) + list(self.manual_translations_used.keys()))):
                 auto_count = self.translations_performed.get(lang, 0)
                 manual_count = self.manual_translations_used.get(lang, 0)
                 if auto_count > 0 or manual_count > 0:
-                    logger.info(f"    {lang}: {auto_count} auto, {manual_count} manual")
+                    output_manager.info(f"    {lang}: {auto_count} auto, {manual_count} manual")
         else:
-            logger.info("  No translations performed")
-        logger.info("")
-        
-        # Performance metrics
-        logger.info("PERFORMANCE METRICS:")
-        if self.series_successful + self.series_failed > 0:
-            logger.info(f"  Average processing time per series: {self.average_series_processing_time:.2f}s")
-            logger.info(f"  Slowest series: '{self.slowest_series_name}' ({self.slowest_series_processing_time:.2f}s)")
-            logger.info(f"  Processing rate: {(self.series_successful + self.series_failed) / duration_minutes:.1f} series/minute")
+            output_manager.info("  No translations performed")
 
-        logger.info("")
-        
+        # Performance metrics
+        output_manager.info("PERFORMANCE METRICS:")
+        if self.series_successful + self.series_failed > 0:
+            output_manager.info(f"  Average processing time per series: {self.average_series_processing_time:.2f}s")
+            output_manager.info(f"  Slowest series: '{self.slowest_series_name}' ({self.slowest_series_processing_time:.2f}s)")
+            output_manager.info(f"  Processing rate: {(self.series_successful + self.series_failed) / duration_minutes:.1f} series/minute")
+
         # Error summary
         if self.errors:
-            logger.info(f"ERROR SUMMARY: {len(self.errors)} error(s) occurred")
+            output_manager.info(f"ERROR SUMMARY: {len(self.errors)} error(s) occurred")
             error_types = {}
             for error in self.errors:
                 error_type = error['type']
                 error_types[error_type] = error_types.get(error_type, 0) + 1
 
             for error_type, count in error_types.items():
-                logger.info(f"  {error_type}: {count} occurrence(s)")
+                output_manager.info(f"  {error_type}: {count} occurrence(s)")
         else:
-            logger.info("ERROR SUMMARY: No errors occurred")
-
-        logger.info("=" * 80)
+            output_manager.info("ERROR SUMMARY: No errors occurred")
