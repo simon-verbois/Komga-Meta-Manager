@@ -55,63 +55,8 @@ The application is configured using a single YAML file named `config.yml`. It is
 
 1.  Create a dedicated directory for your Komga Meta Manager setup (e.g., `komga-meta-manager`).
 2.  Inside this directory, create a subdirectory named `config`.
-3.  Create the main configuration file, `config/config.yml`, starting with the example below.
+3.  Create the main configuration file, `config/config.yml`, starting with the config.yml.template.
 4.  *(Optional but recommended)* You can also create a file named `config/translations.yml` to define manual translations for specific genres or tags, which overrides the automatic translator.
-
-#### Example `config/config.yml`
-
-```yaml
-# Example configuration
-system:
-  dry_run: false         # Set to true to simulate changes without applying them to Komga
-  debug: false           # Enable verbose logging
-  scheduler:
-    enabled: true        # Enable daily scheduled runs
-    run_at: "04:00"      # Time of day to run the job (HH:MM)
-
-komga:
-  url: "http://localhost:8080" # Your Komga instance URL
-  api_key: "YOUR_KOMGA_API_KEY"
-  libraries:             # List of Komga libraries to process
-    - "Manga"
-    - "Webtoons"
-  verify_ssl: true       # Set to false to disable SSL verification (less secure)
-
-provider:
-  name: "anilist"        # Currently, only 'anilist' is supported
-  min_score: 80          # Minimum score for a valid title match (0-100)
-
-processing:
-  overwrite_existing: false # Overwrite existing metadata or only fill empty fields
-  force_unlock: false    # Unlock locked fields before updating
-  exclude_series:        # List of series titles to exclude from processing
-    - "My Excluded Series"
-  update_fields:         # Fields to update if new data is found (set to true to enable)
-    title: true
-    summary: true
-    status: true
-    genres: true
-    tags: true
-    age_rating: true
-    publisher: true
-    total_book_count: true
-    release_date: true
-    authors: true
-    cover_image: true
-  remove_fields:         # Fields to remove (set to true to enable). Takes priority over update_fields.
-    summary: false
-    genres: false
-    tags: false
-    status: false
-    age_rating: false
-
-translation:
-  enabled: true          # Enable metadata translation
-  provider: "google"     # Translation service: 'google' or 'deepl'
-  deepl:
-    api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
-  target_language: "fr"  # ISO 639-1 code (e.g., 'fr', 'en', 'es')
-````
 
 #### Configuration Parameters Explained
 
