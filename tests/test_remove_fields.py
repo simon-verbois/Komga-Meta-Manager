@@ -37,17 +37,27 @@ class TestFieldRemoval:
         self.series = KomgaSeries(
             id="test-series-id",
             name="Test Series",
+            libraryId="lib1",
+            booksCount=10,
             metadata=KomgaSeriesMetadata(
-                summary="Existing summary",
-                genres=["Existing Genre"],
-                tags=["Existing Tag"],
                 status="ONGOING",
-                age_rating=12,
-                summary_lock=False,
-                genres_lock=False,
-                tags_lock=False,
-                status_lock=False,
-                age_rating_lock=False
+                statusLock=False,
+                title="Test Series",
+                titleLock=False,
+                summary="Existing summary",
+                summaryLock=False,
+                readingDirectionLock=False,
+                publisher="Test Publisher",
+                publisherLock=False,
+                ageRating=12,
+                ageRatingLock=False,
+                language="en",
+                languageLock=False,
+                genres=["Existing Genre"],
+                genresLock=False,
+                tags=["Existing Tag"],
+                tagsLock=False,
+                totalBookCountLock=False
             )
         )
 
@@ -119,6 +129,9 @@ class TestFieldRemoval:
 
     def test_priority_in_process_single_series(self):
         """Test that removal takes priority over updates in process_single_series."""
+        # This test needs to run in dry_run mode to get the list of changes back
+        self.config.system.dry_run = True
+
         # Mock provider and translator
         provider = Mock()
         provider.search.return_value = None  # No match found, so no updates
@@ -132,11 +145,25 @@ class TestFieldRemoval:
         series_with_data = KomgaSeries(
             id="test-series-id",
             name="Test Series",
+            libraryId="lib1",
+            booksCount=10,
             metadata=KomgaSeriesMetadata(
+                status="ONGOING",
+                statusLock=False,
+                title="Test Series",
+                titleLock=False,
                 summary="Existing summary",
+                summaryLock=False,
+                readingDirectionLock=False,
+                publisher="Test Publisher",
+                publisherLock=False,
+                ageRatingLock=False,
+                language="en",
+                languageLock=False,
                 genres=["Existing Genre"],
-                summary_lock=False,
-                genres_lock=False
+                genresLock=False,
+                tagsLock=False,
+                totalBookCountLock=False
             )
         )
 

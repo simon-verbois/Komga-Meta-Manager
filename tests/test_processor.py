@@ -59,14 +59,14 @@ class TestChooseBestMatch:
         """Test that popularity breaks ties when scores are equal."""
         series_title = "Test Manga"
         candidates = [
-            self.create_mock_anilist_media("Test Manga Volume 1", "Test Manga 1", popularity=50),
-            self.create_mock_anilist_media("Test Manga Special", "Test Manga Special", popularity=100),
+            self.create_mock_anilist_media("Test Manga A", "Test Manga A", popularity=50),
+            self.create_mock_anilist_media("Test Manga B", "Test Manga B", popularity=100),
         ]
 
-        # Both should have same score, higher popularity should win
+        # Both should have the same score, higher popularity should win
         result = choose_best_match(series_title, candidates, min_score=80)
         assert result is not None
-        assert result.title.english == "Test Manga Special"
+        assert result.title.english == "Test Manga B"
 
     def test_low_score_candidates_filtered_out(self):
         """Test that candidates below min_score are filtered out."""

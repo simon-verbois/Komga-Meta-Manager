@@ -1,6 +1,9 @@
 <p align="center">
-  <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fsimon-verbois%2FKomga-Meta-Manager&label=Visitors&countColor=26A65B&style=plastic" alt="Visitor Count" height="28"/>
-  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/commits/main"><img src="https://img.shields.io/github/last-commit/simon-verbois/Komga-Meta-Manager?style=plastic" alt="GitHub Last Commit" height="28"/></a>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/graphs/traffic"><img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fsimon-verbois%2FKomga-Meta-Manager&label=Visitors&countColor=26A65B&style=flat" alt="Visitor Count" height="28"/></a>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/commits/main"><img src="https://img.shields.io/github/last-commit/simon-verbois/Komga-Meta-Manager?style=flat" alt="GitHub Last Commit" height="28"/></a>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/stargazers"><img src="https://img.shields.io/github/stars/simon-verbois/Komga-Meta-Manager?style=flat&color=yellow" alt="GitHub Stars" height="28"/></a>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/issues"><img src="https://img.shields.io/github/issues/simon-verbois/Komga-Meta-Manager?style=flat&color=red" alt="GitHub Issues" height="28"/></a>
+  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/pulls"><img src="https://img.shields.io/github/issues-pr/simon-verbois/Komga-Meta-Manager?style=flat&color=blue" alt="GitHub Pull Requests" height="28"/></a>
 </p>
 
 # Komga Meta Manager
@@ -9,21 +12,32 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 
 ## ✨ Features
 
-  * **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, **Tags**, and **Cover Images** for your Komga series from **AniList**.
-  * **Targeted Processing:** Only processes libraries you specify in the configuration.
-  * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
-  * **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
-  * **Advanced Caching:** Multi-level caching system with automatic periodic saves to prevent data loss.
-  * **Robust Error Handling:** Configurable timeouts, exponential backoff retry logic, and graceful error recovery.
-  * **Comprehensive Metrics:** Detailed processing statistics, cache performance, and API call monitoring.
-  * **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
-  * **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
-  * **Unit Testing Suite:** Extensive test coverage with pytest for reliable, maintainable code.
+* **Automated Metadata Fetching:** Automatically searches for and fetches **Title**, **Summary**, **Status**, **Genres**, **Tags**, and **Cover Images** for your Komga series from **AniList**.
+* **Targeted Processing:** Only processes libraries you specify in the configuration.
+* **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
+* **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
+* **Advanced Caching:** Multi-level caching system with automatic periodic saves to prevent data loss.
+* **Robust Error Handling:** Configurable timeouts, exponential backoff retry logic, and graceful error recovery.
+* **Comprehensive Metrics:** Detailed processing statistics, cache performance, and API call monitoring.
+* **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
+* **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
+* **Metadata Removal:** Configure the tool to automatically remove specific metadata fields (e.g., old genres or tags) during processing.
+* **Unit Testing Suite:** Extensive test coverage with pytest for reliable, maintainable code.
 
 ## 📷 Example (Before/After)
 
-<img src="images/before.png" alt="Before image - Missing metadata for the series" width="38%">
-<img src="images/after.png" alt="After image - Metadata correctly populated by the tool" width="38%">
+<p align="center">
+  <div style="display: flex; justify-content: center; gap: 20px;">
+    <div style="border: 1px solid #ccc; padding: 10px; border-radius: 5px; text-align: center;">
+      <h3>Before</h3>
+      <img src="images/before.png" alt="Before image - Missing metadata for the series" style="width: 300px; height: auto; display: block; margin: 0 auto;"/>
+    </div>
+    <div style="border: 1px solid #ccc; padding: 10px; border-radius: 5px; text-align: center;">
+      <h3>After</h3>
+      <img src="images/after.png" alt="After image - Metadata correctly populated by the tool" style="width: 300px; height: auto; display: block; margin: 0 auto;"/>
+    </div>
+  </div>
+</p>
 
 ## 🚀 Installation and Setup
 
@@ -39,10 +53,65 @@ The easiest way to run the Komga Meta Manager is using Docker.
 
 The application is configured using a single YAML file named `config.yml`. It is crucial to set your Komga server details and desired processing logic in this file.
 
-1.  Create a directory for your Komga Meta Manager setup (e.g., `komga-meta-manager`).
+1.  Create a dedicated directory for your Komga Meta Manager setup (e.g., `komga-meta-manager`).
 2.  Inside this directory, create a subdirectory named `config`.
-3.  Create the main configuration file, `config/config.yml`, by starting with the example below:
+3.  Create the main configuration file, `config/config.yml`, starting with the example below.
 4.  *(Optional but recommended)* You can also create a file named `config/translations.yml` to define manual translations for specific genres or tags, which overrides the automatic translator.
+
+#### Example `config/config.yml`
+
+```yaml
+# Example configuration
+system:
+  dry_run: false         # Set to true to simulate changes without applying them to Komga
+  debug: false           # Enable verbose logging
+  scheduler:
+    enabled: true        # Enable daily scheduled runs
+    run_at: "04:00"      # Time of day to run the job (HH:MM)
+
+komga:
+  url: "http://localhost:8080" # Your Komga instance URL
+  api_key: "YOUR_KOMGA_API_KEY"
+  libraries:             # List of Komga libraries to process
+    - "Manga"
+    - "Webtoons"
+  verify_ssl: true       # Set to false to disable SSL verification (less secure)
+
+provider:
+  name: "anilist"        # Currently, only 'anilist' is supported
+  min_score: 80          # Minimum score for a valid title match (0-100)
+
+processing:
+  overwrite_existing: false # Overwrite existing metadata or only fill empty fields
+  force_unlock: false    # Unlock locked fields before updating
+  exclude_series:        # List of series titles to exclude from processing
+    - "My Excluded Series"
+  update_fields:         # Fields to update if new data is found (set to true to enable)
+    title: true
+    summary: true
+    status: true
+    genres: true
+    tags: true
+    age_rating: true
+    publisher: true
+    total_book_count: true
+    release_date: true
+    authors: true
+    cover_image: true
+  remove_fields:         # Fields to remove (set to true to enable). Takes priority over update_fields.
+    summary: false
+    genres: false
+    tags: false
+    status: false
+    age_rating: false
+
+translation:
+  enabled: true          # Enable metadata translation
+  provider: "google"     # Translation service: 'google' or 'deepl'
+  deepl:
+    api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
+  target_language: "fr"  # ISO 639-1 code (e.g., 'fr', 'en', 'es')
+````
 
 #### Configuration Parameters Explained
 
@@ -63,19 +132,19 @@ The table below explains every parameter in the `config.yml` file.
 | **`processing`** | **`overwrite_existing`** | Boolean | `false` | If **`true`**, fetched metadata will **overwrite** any existing Komga metadata. If **`false`**, it only fills in fields that are currently empty or unlocked. |
 | | **`force_unlock`** | Boolean | `false` | If **`true`**, the script will automatically **unlock** any locked metadata fields in Komga before updating them. This allows for a complete refresh of metadata. |
 | | **`exclude_series`** | List of Strings | `[]` | A list of exact series titles to **exclude** from processing. |
-| | **`update_fields`** | List of Boolean | `[]` | A list of all supported fields, activate those you want with **true**. |
-| **`remove_fields`** | List of Boolean | `[]` | A list of all supported fields, activate those you want to **remove** with **true**. Note: Takes priority over `update_fields`. |
+| | **`update_fields`** | Object | (All `false` by default) | An object defining which fields to update (set to `true` to enable). Example: `title: true, summary: true`. |
+| | **`remove_fields`** | Object | (All `false` by default) | An object defining which fields to remove (set to `true` to enable). Note: Takes priority over `update_fields`. Example: `genres: true, tags: true`. |
 | **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
 | | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
 | | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. You can get one [here](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans). |
 | | **`target_language`** | String | `"fr"` | The ISO 639-1 code for the language you want to translate to (e.g., `fr`, `en`, `es`). |
-*Deepl will return a better result, but need an API key to work.*
+*DeepL will return a better result, but requires an API key.*
 
 ### 2\. Run with Docker Compose
 
-1.  In the root directory of your project (the one containing the `config` folder), create the `docker-compose.yml` file with the following content:
+1.  In the root directory of your project (the one containing the `config` folder), adapt the `compose.yml` file content:
 
-**`docker-compose.yml`**
+**`compose.yml`**
 
 ```yaml
 services:
@@ -84,8 +153,8 @@ services:
     container_name: komga-meta-manager
     restart: unless-stopped
     environment:
-      # Set your timezone
-      - TZ=Europe/Brussels 
+      # Set your timezone for proper scheduling
+      - TZ=Europe/Brussels
     volumes:
       # Mount the configuration folder where the app will look for config.yml and cache files
       - ./config:/config
@@ -93,13 +162,16 @@ services:
 
 2.  Start the container in detached mode:
 
+<!-- end list -->
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 *To run the job once and remove the container afterwards (e.g., for testing or manual runs without scheduling), use:*
+
 ```bash
-docker-compose run --rm komga-meta-manager
+docker compose run --rm komga-meta-manager
 ```
 
 ### 3\. Verification
@@ -112,49 +184,57 @@ docker logs komga-meta-manager -f
 
 ## 🧪 Testing
 
-The application includes a comprehensive test suite:
+The application includes a comprehensive test suite.
 
-```bash
-# Install testing dependencies
-pip install -r requirements.txt
-pip install pytest pytest-cov pytest-mock
+To run the tests, you can use a dedicated `testing-compose.yml` file:
 
-# Run tests
-pytest
+**`testing-compose.yml`**
 
-# Run with coverage
-pytest --cov=manga_manager --cov-report=html
-
-# Run specific test categories
-pytest -m "unit"        # Unit tests only
-pytest -m "integration" # Integration tests
+```yaml
+services:
+  komga-meta-manager:
+    build: .
+    container_name: komga-meta-manager-test
+    restart: no
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./config:/config
+      - ./tests:/tests
+    command: sh -c "python -m pytest /tests/ -v --tb=short && echo && echo && echo && python -m modules.main"
 ```
 
-## � Documentation
+To execute the tests (and then start the application if tests pass):
+
+```bash
+docker compose -f testing-compose.yml up --build
+```
+
+This will build the image, run all unit tests, and if they pass, it will then start the application. If any tests fail, the container will exit, reporting the failures.
+
+## 📖 Documentation
 
 Complete documentation is available in the `docs/` directory:
 
-- **[Development Guide](docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices
-- **[Testing Guide](docs/TESTING.md)**: Comprehensive testing instructions and strategies
-- **[Architecture](docs/ARCHITECTURE.md)**: Detailed architectural documentation
+  * **[Development Guide](https://www.google.com/search?q=docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices.
+  * **[Testing Guide](https://www.google.com/search?q=docs/TESTING.md)**: Comprehensive testing instructions and strategies.
+  * **[Architecture](https://www.google.com/search?q=docs/ARCHITECTURE.md)**: Detailed architectural documentation.
 
-## �📜 Changelog
+## 📜 Changelog
 
 Check the [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and versions.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see the [Development Guide](docs/DEVELOPMENT.md) for:
+We welcome contributions\! Please see the [Development Guide](https://www.google.com/search?q=docs/DEVELOPMENT.md) for:
 
-- Development environment setup
-- Code style guidelines
-- Testing requirements
-- Pull request process
+  * Development environment setup
+  * Code style guidelines
+  * Testing requirements
+  * Pull request process
 
 ## ⚙️ Resources
 
-[Dockerhub Repository](https://hub.docker.com/r/simonverbois/komga-meta-manager)
-
-[Komga Homepage](https://komga.org/)
-
-[Komga API Documentation](https://komga.org/guides/rest-api/)
+  * [Docker Hub Repository](https://hub.docker.com/r/simonverbois/komga-meta-manager)
+  * [Komga Homepage](https://komga.org/)
+  * [Komga API Documentation](https://komga.org/guides/rest-api/)

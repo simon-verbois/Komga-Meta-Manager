@@ -26,6 +26,3 @@ translations.yml
 
 # Cache directories
 /config/cache/
-
-# Other
-testing-compose.yml

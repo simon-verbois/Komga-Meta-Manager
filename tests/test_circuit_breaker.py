@@ -165,7 +165,8 @@ class TestCircuitBreaker:
         """Test that after recovery timeout, circuit goes to HALF_OPEN."""
         config = CircuitBreakerConfig(
             failure_threshold=1,
-            recovery_timeout=0.1  # Very short timeout for testing
+            recovery_timeout=0.1,  # Very short timeout for testing
+            success_threshold=1
         )
         cb = CircuitBreaker(config)
 
@@ -314,7 +315,7 @@ class TestCircuitBreakerIntegration:
                 return "success"
             raise Exception("Service unavailable")
 
-        config = CircuitBreakerConfig(failure_threshold=2, recovery_timeout=0.1)
+        config = CircuitBreakerConfig(failure_threshold=2, recovery_timeout=0.1, success_threshold=1)
         cb = CircuitBreaker(config)
 
         # Fail twice to open circuit
