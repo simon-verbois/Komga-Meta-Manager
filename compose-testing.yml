@@ -8,5 +8,4 @@ services:
     volumes:
       - ./config:/config
       - ./tests:/tests
-    #command: sh -c "printf '\\n\\n\\n' && python -m modules.main"
     command: sh -c "python -m pytest /tests/ -v --tb=short && printf '\\n\\n\\n' && python -m modules.main"

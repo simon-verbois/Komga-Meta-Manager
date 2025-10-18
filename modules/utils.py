@@ -4,9 +4,9 @@ Utility functions for the Manga Manager.
 """
 import re
 from pathlib import Path
-from modules.output import get_output_manager
+import logging
 
-output_manager = get_output_manager()
+logger = logging.getLogger(__name__)
 
 def clean_html(raw_html: str) -> str:
     """
@@ -56,13 +56,13 @@ def load_app_version() -> str:
         with open(VERSION_FILE, 'r', encoding='utf-8') as f:
             version = f.read().strip()
             if not version:
-                output_manager.warning("VERSION file is empty. Using 'unknown' as default.")
+                logger.warning("VERSION file is empty. Using 'unknown' as default.")
                 return "unknown"
-            output_manager.info(f"Application version loaded: {version}")
+            logger.info(f"Application version loaded: {version}")
             return version
     except FileNotFoundError:
-        output_manager.warning(f"VERSION file not found at {VERSION_FILE}. Using 'unknown' as default.")
+        logger.warning(f"VERSION file not found at {VERSION_FILE}. Using 'unknown' as default.")
         return "unknown"
     except Exception as e:
-        output_manager.error(f"Error reading VERSION file: {e}. Using 'unknown' as default.")
+        logger.error(f"Error reading VERSION file: {e}. Using 'unknown' as default.")
         return "unknown"

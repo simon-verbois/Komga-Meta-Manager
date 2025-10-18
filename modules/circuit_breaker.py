@@ -3,13 +3,13 @@
 Circuit Breaker implementation for resilient API calls.
 """
 import time
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 import threading
-from modules.output import get_output_manager
 
-output_manager = get_output_manager()
+logger = logging.getLogger(__name__)
 
 class CircuitBreakerState(Enum):
     """Enumeration of possible circuit breaker states."""
@@ -121,7 +121,7 @@ class CircuitBreaker:
             Exception: Any exception raised by the function
         """
         if not self._can_attempt_request():
-            output_manager.warning(f"Circuit breaker '{self.config.name}' is OPEN, blocking request")
+            logger.warning(f"Circuit breaker '{self.config.name}' is OPEN, blocking request")
             raise CircuitBreakerException(f"Circuit breaker '{self.config.name}' is open")
 
         try:
@@ -178,29 +178,21 @@ class CircuitBreaker:
         old_state = self._state
         self._state = CircuitBreakerState.CLOSED
         self.metrics.record_state_change(old_state, self._state)
-
-        output_manager.info(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
+        logger.info(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
 
     def _transition_to_open(self):
         """Transition the circuit breaker to OPEN state."""
         old_state = self._state
         self._state = CircuitBreakerState.OPEN
         self.metrics.record_state_change(old_state, self._state)
-        output_manager.warning(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
+        logger.warning(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
 
     def _transition_to_half_open(self):
         """Transition the circuit breaker to HALF_OPEN state."""
         old_state = self._state
         self._state = CircuitBreakerState.HALF_OPEN
         self.metrics.record_state_change(old_state, self._state)
-        output_manager.info(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
-
-    def _transition_to_half_open(self):
-        """Transition the circuit breaker to HALF_OPEN state."""
-        old_state = self._state
-        self._state = CircuitBreakerState.HALF_OPEN
-        self.metrics.record_state_change(old_state, self._state)
-        output_manager.info(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
+        logger.info(f"Circuit breaker '{self.config.name}' transitioned from {old_state.value} to {self._state.value}")
 
 class CircuitBreakerFactory:
     """
@@ -227,7 +219,7 @@ class CircuitBreakerFactory:
         with self._lock:
             if config.name not in self._circuit_breakers:
                 self._circuit_breakers[config.name] = CircuitBreaker(config)
-                output_manager.debug(f"Created new circuit breaker '{config.name}'")
+                logger.debug(f"Created new circuit breaker '{config.name}'")
 
             return self._circuit_breakers[config.name]
 

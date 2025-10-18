@@ -18,9 +18,8 @@ from modules.constants import (
     MAX_RETRIES
 )
 from .base import MetadataProvider
-from modules.output import get_output_manager
 
-output_manager = get_output_manager()
+logger = logging.getLogger(__name__)
 
 class AnilistProvider(MetadataProvider):
     """
@@ -52,7 +51,7 @@ class AnilistProvider(MetadataProvider):
             fetch_schema_from_transport=False
         )
         
-        output_manager.info(f"AniList Provider initialized with {cache_ttl_hours}h cache TTL", "api")
+        logger.info(f"AniList Provider initialized with {cache_ttl_hours}h cache TTL")
 
     def _perform_search(self, search_term: str) -> List[AniListMedia]:
         """
@@ -122,10 +121,10 @@ class AnilistProvider(MetadataProvider):
         }
 
         try:
-            output_manager.info(f"Searching AniList for manga: '{search_term}'", "api")
+            logger.info(f"Searching AniList for manga: '{search_term}'")
             result = self.client.execute(query, variable_values=params)
 
-            output_manager.debug(f"Raw AniList response for '{search_term}': {result}")
+            logger.debug(f"Raw AniList response for '{search_term}': {result}")
 
             if result and result.get('Page') and result['Page'].get('media'):
                 media_list = result['Page']['media']
@@ -137,29 +136,27 @@ class AnilistProvider(MetadataProvider):
                     try:
                         validated_media.append(AniListMedia.model_validate(media_item))
                     except Exception as e:
-                        output_manager.warning(
+                        logger.warning(
                             f"Failed to validate media item from AniList response: {e}. "
-                            f"Skipping this result.",
-                            "warning"
+                            f"Skipping this result."
                         )
 
-                output_manager.info(f"Found {len(validated_media)} valid results for '{search_term}'", "success")
+                logger.info(f"Found {len(validated_media)} valid results for '{search_term}'")
                 return validated_media
             else:
-                output_manager.warning(f"No results found on AniList for '{search_term}'", "warning")
+                logger.warning(f"No results found on AniList for '{search_term}'")
                 return []
 
         except TransportQueryError as e:
             # GraphQL-specific errors (e.g., rate limiting, query syntax errors)
-            output_manager.error(
+            logger.error(
                 f"GraphQL error while querying AniList for '{search_term}': {e}. "
-                "This may indicate rate limiting or an API issue.",
-                "error"
+                f"This may indicate rate limiting or an API issue."
             )
             return []
         except Exception as e:
             # Catch-all for network errors, timeouts, etc.
-            output_manager.error(
+            logger.error(
                 f"Unexpected error while querying AniList for '{search_term}': {e}",
                 exc_info=True
             )
