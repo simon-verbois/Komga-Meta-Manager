@@ -19,6 +19,7 @@ RUN groupadd --system --gid 1000 appgroup && useradd --system --uid 1000 --gid a
 
 COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 COPY --chown=appuser:appgroup ./modules ./modules
+COPY --chown=appuser:appgroup ./VERSION ./VERSION
 
 USER appuser
 
