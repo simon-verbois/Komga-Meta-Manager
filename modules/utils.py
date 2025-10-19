@@ -44,6 +44,16 @@ def clean_html(raw_html: str) -> str:
 class FrameFormatter(logging.Formatter):
     def format(self, record):
         formatted = super().format(record)
+        # Pad the levelname part to align messages
+        start_brk = formatted.find('[')
+        padded_length = 10
+        if start_brk != -1:
+            end_level = formatted.find('] ', start_brk)
+            if end_level != -1:
+                level_part = formatted[start_brk:end_level + 2]  # '[LEVEL] '
+                if len(level_part) < padded_length:
+                    padded_level_part = level_part.ljust(padded_length)
+                    formatted = formatted.replace(level_part, padded_level_part)
         msg = record.getMessage()
         if msg.startswith('center:'):
             content = msg[7:].strip()
@@ -74,7 +84,10 @@ class FrameFormatter(logging.Formatter):
         else:
             # already formatted frame line
             final_msg = msg
-        level_end = formatted.rfind('] ') + 2
+        if start_brk != -1:
+            level_end = start_brk + padded_length
+        else:
+            level_end = formatted.rfind('] ') + 2
         lines = final_msg.split('\n')
         prefixed_lines = [formatted[:level_end] + line for line in lines]
         return '\n'.join(prefixed_lines)
