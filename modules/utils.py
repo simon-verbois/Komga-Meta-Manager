@@ -70,9 +70,14 @@ class FrameFormatter(logging.Formatter):
                 else:
                     padded = (" " + line).ljust(100)
                 msg_parts.append(f"|{padded}|")
-            msg_part = "\n".join(msg_parts)
+            final_msg = "\n".join(msg_parts)
+        else:
+            # already formatted frame line
+            final_msg = msg
         level_end = formatted.rfind('] ') + 2
-        return formatted[:level_end] + msg_part
+        lines = final_msg.split('\n')
+        prefixed_lines = [formatted[:level_end] + line for line in lines]
+        return '\n'.join(prefixed_lines)
 
 def log_frame(msg, align='left'):
     prefix = 'left:' if align == 'left' else 'center:'
