@@ -25,32 +25,7 @@ ANILIST_STATUS_TO_KOMGA = {
     'HIATUS': 'HIATUS'
 }
 
-def _print_dry_run_report(processed_count: int, updated_series_report: Dict[str, List[str]]):
-    """Formats and prints a summary report for a dry run."""
-    updated_count = len(updated_series_report)
-    
-    report_lines = [
-        "\n",
-        "================================================================",
-        "                    --- Dry Run Report ---                      ",
-        "================================================================",
-        f"\nSeries Processed: {processed_count}",
-        f"Series to be Updated: {updated_count}\n"
-    ]
 
-    if not updated_series_report:
-        report_lines.append("No changes to be made.")
-    else:
-        for series_name, changes in sorted(updated_series_report.items()):
-            report_lines.append(f"Changes for '{series_name}':")
-            for change in changes:
-                report_lines.append(f"  {change}")
-            report_lines.append("")
-
-    report_lines.append("================================================================")
-    
-    for line in report_lines:
-        logger.info(line)
 
 def choose_best_match(series_title: str, candidates: List[AniListMedia], min_score: int = 80) -> Optional[AniListMedia]:
     """
@@ -137,9 +112,6 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
 
     logger.info(f"Found {len(target_libraries)} target library/libraries to process: {list(target_libraries.keys())}")
 
-    processed_count = 0
-    updated_series_report: Dict[str, List[str]] = {}
-
     for lib_name, lib_id in target_libraries.items():
         logging.info("|                                                                                                    |")
         logging.info("|====================================================================================================|")
@@ -156,14 +128,8 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
             if series.name in config.processing.exclude_series:
                 logger.info(f"Skipping series '{series.name}', excluded.")
                 continue
-            
-            processed_count += 1
-            proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
-            if config.system.dry_run and proposed_changes:
-                updated_series_report[series.name] = proposed_changes
 
-    if config.system.dry_run:
-        _print_dry_run_report(processed_count, updated_series_report)
+            proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
 
     if metadata_provider:
         metadata_provider.save_cache()
@@ -566,8 +532,13 @@ def process_single_series(
         logger.info("No metadata changes required for this series.")
         return None
 
+    # Log the changes immediately
     if config.system.dry_run:
-        logger.warning(f"[DRY-RUN] Series '{series.name}' has pending changes.")
+        logger.info(f"[DRY-RUN] Proposed changes for '{series.name}':")
+    for change in change_descriptions:
+        logger.info(change)
+
+    if config.system.dry_run:
         return change_descriptions
     else:
         if payload:
