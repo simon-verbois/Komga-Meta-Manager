@@ -176,13 +176,14 @@ def _update_summary(payload: Dict, series: KomgaSeries, best_match: AniListMedia
     metadata = series.metadata
     if should_update_field(metadata.summary, metadata.summary_lock, config):
         new_summary = clean_html(best_match.description)
-        if new_summary and new_summary != metadata.summary:
+        if new_summary:
             if translator and config.translation:
                 new_summary = translator.translate(new_summary, config.translation.target_language)
-            payload['summary'] = new_summary
-            if metadata.summary_lock and config.processing.force_unlock:
-                payload['summaryLock'] = False
-            return "- Summary: Will be updated."
+            if config.processing.overwrite_existing or new_summary != metadata.summary:
+                payload['summary'] = new_summary
+                if metadata.summary_lock and config.processing.force_unlock:
+                    payload['summaryLock'] = False
+                return "- Summary: Will be updated."
     return None
 
 def _update_genres(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
