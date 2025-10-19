@@ -6,11 +6,10 @@ import json
 import logging
 import time
 from typing import List, Optional
-
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError
 import urllib3
-
+from modules.utils import log_frame
 from modules.config import KomgaConfig
 from modules.models import KomgaLibrary, KomgaSeries, KomgaBook
 from modules.constants import (
@@ -194,6 +193,10 @@ class KomgaClient:
             >>> client.get_libraries()
             [KomgaLibrary(id='1', name='Manga'), KomgaLibrary(id='2', name='Comics')]
         """
+        logging.info("|                                                                                                    |")
+        logging.info("|====================================================================================================|")
+        log_frame("Libraries Configurations", 'center')
+        logging.info("|====================================================================================================|")
         logger.info("Fetching all libraries from Komga...")
         response_data = self._make_request("GET", "libraries")
 

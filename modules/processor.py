@@ -13,6 +13,7 @@ from modules.providers.base import MetadataProvider
 from modules.translators import get_translator, Translator
 from modules.models import KomgaSeries, AniListMedia, KomgaBook
 from modules.utils import clean_html
+from modules.utils import log_frame
 from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,11 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
     updated_series_report: Dict[str, List[str]] = {}
 
     for lib_name, lib_id in target_libraries.items():
-        logger.info(f"--- Processing library: '{lib_name}' (ID: {lib_id}) ---")
+        logging.info("|                                                                                                    |")
+        logging.info("|====================================================================================================|")
+        log_frame(f"Processing Library: {lib_name}", 'center')
+        logging.info("|====================================================================================================|")
+        #logger.info(f"---  '{lib_name}' (ID: {lib_id}) ---")
         series_list = komga_client.get_series_in_library(lib_id, lib_name)
 
         if not series_list:
@@ -488,8 +493,10 @@ def process_single_series(
     In dry run mode, it returns a list of proposed changes.
     In normal mode, it applies changes and returns None.
     """
-    logger.info(f"--- Processing Series: {series.name} ---")
-
+    logging.info("|                                                                                                    |")
+    logging.info("|====================================================================================================|")
+    log_frame(f"Processing Series: {series.name}", 'center')
+    logging.info("|====================================================================================================|")
     payload = {}
     change_descriptions: List[str] = []
 

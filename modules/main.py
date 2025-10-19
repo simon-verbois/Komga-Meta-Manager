@@ -10,28 +10,7 @@ import schedule
 import psutil
 from modules.config import load_config, AppConfig
 from modules.processor import process_libraries
-
-class FrameFormatter(logging.Formatter):
-    def format(self, record):
-        formatted = super().format(record)
-        msg = record.getMessage()
-        if msg.startswith('center:'):
-            content = msg[7:].strip()
-            padded = content.center(100)
-            msg_part = f"|{padded}|"
-        elif msg.startswith('left:'):
-            content = msg[6:]
-            padded = content.ljust(100)
-            msg_part = f"|{padded}|"
-        elif msg.startswith('|') and msg.endswith('|'):
-            # already formatted frame line
-            msg_part = msg
-        else:
-            msg_part = msg
-        level_end = formatted.rfind('] ') + 2
-        return formatted[:level_end] + msg_part
-
-
+from modules.utils import FrameFormatter, log_frame
 
 def display_header():
     """Displays header information in log format."""
@@ -67,13 +46,14 @@ def display_header():
     logging.info("|                                         |___/                                                      |")
     logging.info("|                                         M  A  N  A  G  E  R                                        |")
     logging.info("|                                                                                                    |")
-    logging.info("left:  Version: {}{}".format(version, docker_str))
-    logging.info("left:  Platform: {}".format(platform_str))
-    logging.info("left:  Total Memory: {} GB".format(total_mem))
-    logging.info("left:  Available Memory: {} GB".format(avail_mem))
-    logging.info("left:  Process Priority: {}".format(prio_str))
+    log_frame("Version: {}{}".format(version, docker_str), 'left')
+    log_frame("Platform: {}".format(platform_str), 'left')
+    log_frame("Total Memory: {} GB".format(total_mem), 'left')
+    log_frame("Available Memory: {} GB".format(avail_mem), 'left')
+    log_frame("Process Priority: {}".format(prio_str), 'left')
+    logging.info("|                                                                                                    |")
     logging.info("|====================================================================================================|")
-    logging.info("center:Starting Run")
+    log_frame("Global Configurations", 'center')
     logging.info("|====================================================================================================|")
 
 def setup_logging(debug: bool = False):
@@ -135,7 +115,7 @@ def main():
         app_config = load_config()
         setup_logging(app_config.system.debug)
         display_header()
-        logging.info("left:  Configuration loaded successfully.")
+        log_frame("Configuration loaded successfully.", 'left')
         if app_config.system.dry_run:
             logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
 
@@ -143,7 +123,10 @@ def main():
             # "Run once" mode
             logging.info("Scheduler is disabled. Running the job once.")
             run_job_and_save_cache(config=app_config)
-            logging.info("--- Komga Meta Manager Finished ---")
+            logging.info("|                                                                                                    |")
+            logging.info("|====================================================================================================|")
+            log_frame("Komga Meta Manager Finished", 'center')
+            logging.info("|====================================================================================================|")
         else:
             # "Schedule" mode
             run_time = app_config.system.scheduler.run_at
