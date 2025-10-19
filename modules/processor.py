@@ -4,7 +4,8 @@ Core processing logic for the Manga Manager.
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Callable
+from dataclasses import dataclass
 
 from modules.config import AppConfig
 from modules.komga_client import KomgaClient
@@ -24,6 +25,184 @@ ANILIST_STATUS_TO_KOMGA = {
     'CANCELLED': 'ABANDONED',
     'HIATUS': 'HIATUS'
 }
+
+@dataclass
+class FieldHandler:
+    """Handles processing of a single metadata field."""
+    field_name: str
+    operation: str  # 'update' or 'remove'
+    config_attr: str
+
+    def process(self, payload: Dict, series: KomgaSeries, best_match: Optional[AniListMedia], config: AppConfig, translator: Optional[Translator], komga_client: Optional[KomgaClient] = None) -> Optional[str]:
+        """Process this field and return change description if any."""
+        metadata = series.metadata
+
+        # Check if operation is enabled in config
+        config_field = getattr(config.processing.update_fields if self.operation == 'update' else config.processing.remove_fields, self.config_attr, False)
+        if not config_field:
+            return None
+
+        # For updates, we need a best_match
+        if self.operation == 'update' and not best_match:
+            return None
+
+        # Check lock/force unlock logic
+        if self.operation == 'update':
+            should_process = should_update_field(getattr(metadata, self.field_name), getattr(metadata, self.field_name + '_lock'), config)
+        else:
+            should_process = should_remove_field(getattr(metadata, self.field_name), getattr(metadata, self.field_name + '_lock'), config)
+
+        if not should_process:
+            return None
+
+        # Process the field
+        return self._process_field(payload, series, best_match, config, translator, komga_client)
+
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        """Subclass-specific field processing logic."""
+        raise NotImplementedError
+
+@dataclass
+class SummaryHandler(FieldHandler):
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        metadata = series.metadata
+
+        if self.operation == 'update':
+            new_value = clean_html(best_match.description) if best_match.description else None
+            if new_value and translator and config.translation:
+                new_value = translator.translate(new_value, config.translation.target_language)
+            if not config.processing.overwrite_existing and new_value == metadata.summary:
+                return None
+        else:
+            new_value = ""
+
+        payload[self.field_name] = new_value
+        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
+            payload[self.field_name + 'Lock'] = False
+        return f"- {self.field_name.title()}: {'Will be updated' if self.operation == 'update' else 'Will be removed'}."
+
+@dataclass
+class GenresHandler(FieldHandler):
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        metadata = series.metadata
+
+        if self.operation == 'update':
+            if not best_match.genres:
+                return None
+            translated_genres = set(best_match.genres)
+            if translator and config.translation:
+                translated_genres = {translator.translate(g, config.translation.target_language) for g in best_match.genres}
+            new_value = sorted(list(translated_genres))
+            if not config.processing.overwrite_existing and set(new_value) == set(metadata.genres or []):
+                return None
+        else:
+            new_value = []
+
+        payload[self.field_name] = new_value
+        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
+            payload[self.field_name + 'Lock'] = False
+        return f"- {self.field_name.title()}: Set to {new_value}" if self.operation == 'update' else f"- {self.field_name.title()}: Will be removed."
+
+@dataclass
+class StatusHandler(FieldHandler):
+    field_name = "status"
+
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        metadata = series.metadata
+
+        if self.operation == 'update':
+            if not best_match.status:
+                return None
+            new_value = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
+            if not new_value or (not config.processing.overwrite_existing and new_value == metadata.status):
+                return None
+        else:
+            new_value = None
+
+        payload[self.field_name] = new_value
+        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
+            payload[self.field_name + 'Lock'] = False
+        return f"- {self.field_name.title()}: Set to '{new_value}'" if self.operation == 'update' else f"- {self.field_name.title()}: Will be removed."
+
+@dataclass
+class TagsHandler(FieldHandler):
+    field_name = "tags"
+
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        metadata = series.metadata
+
+        if self.operation == 'update':
+            if not best_match.tags:
+                return None
+            extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
+            translated_tags = extracted_tags
+            if translator and config.translation:
+                translated_tags = {translator.translate(tag, config.translation.target_language) for tag in extracted_tags}
+            new_value = sorted(list(translated_tags))
+            if not config.processing.overwrite_existing and set(new_value) == set(metadata.tags or []):
+                return None
+        else:
+            new_value = []
+
+        payload[self.field_name] = new_value
+        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
+            payload[self.field_name + 'Lock'] = False
+        return f"- {self.field_name.title()}: Set to {new_value}" if self.operation == 'update' else f"- {self.field_name.title()}: Will be removed."
+
+@dataclass
+class AgeRatingHandler(FieldHandler):
+    field_name = "age_rating"
+
+    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+        metadata = series.metadata
+
+        if self.operation == 'update':
+            if not best_match.isAdult:
+                return None
+            new_value = 18
+            if not config.processing.overwrite_existing and metadata.age_rating == 18:
+                return None
+        else:
+            new_value = None
+
+        payload[self.field_name] = new_value
+        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
+            payload[self.field_name + 'Lock'] = False
+        return "- Age Rating: Set to 18 (Adult)" if self.operation == 'update' else "- Age Rating: Will be removed."
+
+@dataclass
+class CoverImageHandler:
+    operation: str = "update"
+    config_attr: str = "cover_image"
+
+    def process(self, payload, series, best_match, config, translator, komga_client):
+        if not config.processing.update_fields.cover_image or not best_match or not best_match.coverImage:
+            return None
+
+        image_url = best_match.coverImage.extraLarge or best_match.coverImage.large or best_match.coverImage.medium
+        if not image_url:
+            return None
+
+        if config.system.dry_run:
+            return f"- Cover Image: Will be updated from {image_url}"
+        else:
+            success = komga_client.upload_series_poster(series.id, image_url) if komga_client else False
+            return f"- Cover Image: {'Successfully updated' if success else 'Failed to update'} from {image_url}"
+
+# Global field handlers
+FIELD_HANDLERS = [
+    SummaryHandler("summary", "update", "summary"),
+    SummaryHandler("summary", "remove", "summary"),
+    GenresHandler("genres", "update", "genres"),
+    GenresHandler("genres", "remove", "genres"),
+    StatusHandler("status", "update", "status"),
+    StatusHandler("status", "remove", "status"),
+    TagsHandler("tags", "update", "tags"),
+    TagsHandler("tags", "remove", "tags"),
+    AgeRatingHandler("age_rating", "update", "age_rating"),
+    AgeRatingHandler("age_rating", "remove", "age_rating"),
+]
+
 
 
 
@@ -141,165 +320,6 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
     return translator
 
 
-def _update_summary(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
-    if not config.processing.update_fields.summary:
-        return None
-    metadata = series.metadata
-    if should_update_field(metadata.summary, metadata.summary_lock, config):
-        new_summary = clean_html(best_match.description)
-        if new_summary:
-            if translator and config.translation:
-                new_summary = translator.translate(new_summary, config.translation.target_language)
-            if config.processing.overwrite_existing or new_summary != metadata.summary:
-                payload['summary'] = new_summary
-                if metadata.summary_lock and config.processing.force_unlock:
-                    payload['summaryLock'] = False
-                return "- Summary: Will be updated."
-    return None
-
-def _update_genres(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
-    if not config.processing.update_fields.genres:
-        return None
-    metadata = series.metadata
-    if best_match.genres and should_update_field(metadata.genres, metadata.genres_lock, config):
-        translated_genres = set(best_match.genres)
-        if translator and config.translation:
-            translated_genres = {translator.translate(genre, config.translation.target_language) for genre in best_match.genres}
-        if translated_genres != metadata.genres:
-            sorted_genres = sorted(list(translated_genres))
-            payload['genres'] = sorted_genres
-            if metadata.genres_lock and config.processing.force_unlock:
-                payload['genresLock'] = False
-            return f"- Genres: Set to {sorted_genres}"
-    return None
-
-def _update_status(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
-    if not config.processing.update_fields.status:
-        return None
-    metadata = series.metadata
-    if best_match.status and should_update_field(metadata.status, metadata.status_lock, config):
-        new_status = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
-        if new_status and new_status != metadata.status:
-            payload['status'] = new_status
-            if metadata.status_lock and config.processing.force_unlock:
-                payload['statusLock'] = False
-            return f"- Status: Set to '{new_status}'"
-    return None
-
-def _update_tags(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig, translator: Optional[Translator]):
-    if not config.processing.update_fields.tags:
-        return None
-    metadata = series.metadata
-    if best_match.tags and should_update_field(metadata.tags, metadata.tags_lock, config):
-        extracted_tags = {tag['name'] for tag in best_match.tags if 'name' in tag}
-        translated_tags = extracted_tags
-        if translator and config.translation:
-            translated_tags = {translator.translate(tag, config.translation.target_language) for tag in extracted_tags}
-        if translated_tags != metadata.tags:
-            sorted_tags = sorted(list(translated_tags))
-            payload['tags'] = sorted_tags
-            if metadata.tags_lock and config.processing.force_unlock:
-                payload['tagsLock'] = False
-            return f"- Tags: Set to {sorted_tags}"
-    return None
-
-def _update_age_rating(payload: Dict, series: KomgaSeries, best_match: AniListMedia, config: AppConfig):
-    if not config.processing.update_fields.age_rating:
-        return None
-    metadata = series.metadata
-    if best_match.isAdult and should_update_field(metadata.age_rating, metadata.age_rating_lock, config):
-        if metadata.age_rating != 18:
-            payload['ageRating'] = 18
-            if metadata.age_rating_lock and config.processing.force_unlock:
-                payload['ageRatingLock'] = False
-            return "- Age Rating: Set to 18 (Adult)"
-    return None
-
-def _update_cover_image(series: KomgaSeries, best_match: AniListMedia, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
-    if not config.processing.update_fields.cover_image:
-        return None
-
-    if best_match.coverImage:
-        image_url = best_match.coverImage.extraLarge or best_match.coverImage.large or best_match.coverImage.medium
-        if not image_url:
-            return None
-
-        if config.system.dry_run:
-            return f"- Cover Image: Will be updated from {image_url}"
-        else:
-            if komga_client.upload_series_poster(series.id, image_url):
-                return f"- Cover Image: Successfully updated from {image_url}"
-            else:
-                return f"- Cover Image: Failed to update."
-    return None
-
-def _remove_summary(payload: Dict, series: KomgaSeries, config: AppConfig):
-    if not config.processing.remove_fields.summary:
-        return None
-    metadata = series.metadata
-    if should_remove_field(metadata.summary, metadata.summary_lock, config):
-        payload['summary'] = ""
-        if metadata.summary_lock and config.processing.force_unlock:
-            payload['summaryLock'] = False
-        return "- Summary: Will be removed."
-    return None
-
-def _remove_genres(payload: Dict, series: KomgaSeries, config: AppConfig):
-    if not config.processing.remove_fields.genres:
-        return None
-    metadata = series.metadata
-    if should_remove_field(metadata.genres, metadata.genres_lock, config):
-        payload['genres'] = []
-        if metadata.genres_lock and config.processing.force_unlock:
-            payload['genresLock'] = False
-        return "- Genres: Will be removed."
-    return None
-
-def _remove_status(payload: Dict, series: KomgaSeries, config: AppConfig):
-    if not config.processing.remove_fields.status:
-        return None
-    metadata = series.metadata
-    if should_remove_field(metadata.status, metadata.status_lock, config):
-        payload['status'] = None
-        if metadata.status_lock and config.processing.force_unlock:
-            payload['statusLock'] = False
-        return "- Status: Will be removed."
-    return None
-
-def _remove_tags(payload: Dict, series: KomgaSeries, config: AppConfig):
-    if not config.processing.remove_fields.tags:
-        return None
-    metadata = series.metadata
-    if should_remove_field(metadata.tags, metadata.tags_lock, config):
-        payload['tags'] = []
-        if metadata.tags_lock and config.processing.force_unlock:
-            payload['tagsLock'] = False
-        return "- Tags: Will be removed."
-    return None
-
-def _remove_age_rating(payload: Dict, series: KomgaSeries, config: AppConfig):
-    if not config.processing.remove_fields.age_rating:
-        return None
-    metadata = series.metadata
-    if should_remove_field(metadata.age_rating, metadata.age_rating_lock, config):
-        payload['ageRating'] = None
-        if metadata.age_rating_lock and config.processing.force_unlock:
-            payload['ageRatingLock'] = False
-        return "- Age Rating: Will be removed."
-    return None
-
-def _remove_cover_image(series: KomgaSeries, config: AppConfig) -> Optional[str]:
-    if not config.processing.remove_fields.cover_image:
-        return None
-
-    if config.system.dry_run:
-        return "- Cover Image: Will be removed."
-    else:
-        # Note: Komga API doesn't have a specific endpoint to delete cover image
-        # We could upload a placeholder or leave it as is for now
-        logger.warning("Cover image removal not fully implemented in Komga API")
-        return "- Cover Image: Removal not supported by Komga API."
-    return None
 
 def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: List[str], komga_client: KomgaClient) -> bool:
     """
@@ -328,7 +348,6 @@ def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: 
                 if metadata.authors_lock and config.processing.force_unlock:
                     payload['authorsLock'] = False
 
-
                 success = komga_client.update_book_metadata(book.id, payload)
                 if success:
                     logger.debug(f"Successfully removed authors from book '{book.name}'")
@@ -337,6 +356,19 @@ def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: 
             has_changes = True
 
     return has_changes
+
+def _remove_cover_image(series: KomgaSeries, config: AppConfig) -> Optional[str]:
+    if not config.processing.remove_fields.cover_image:
+        return None
+
+    if config.system.dry_run:
+        return "- Cover Image: Will be removed."
+    else:
+        # Note: Komga API doesn't have a specific endpoint to delete cover image
+        # We could upload a placeholder or leave it as is for now
+        logger.warning("Cover image removal not fully implemented in Komga API")
+        return "- Cover Image: Removal not supported by Komga API."
+    return None
 
 def is_story_writer_role(role: str) -> bool:
     """Check if a role indicates story writing (case-insensitive match for 'story')."""
@@ -466,29 +498,27 @@ def process_single_series(
     payload = {}
     change_descriptions: List[str] = []
 
-    # 1. Handle removals first, as they have priority and are independent of finding a match.
-    # Get books in series for author removals that need to be done per book
     books = []
-    if config.processing.remove_fields.authors:
-        books = komga_client.get_books_in_series(series.id, series.name)
-        logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author removal")
 
-    remove_fns = [
-        (_remove_summary, series, config),
-        (_remove_genres, series, config),
-        (_remove_status, series, config),
-        (_remove_tags, series, config),
-        (_remove_age_rating, series, config),
-    ]
-    for remove_fn, *args in remove_fns:
-        if change := remove_fn(payload, *args):
-            change_descriptions.append(change)
+    # 1. Handle removals first (don't need best_match)
+    for handler in FIELD_HANDLERS:
+        if handler.operation == 'remove':
+            if handler.config_attr == 'authors':
+                books = komga_client.get_books_in_series(series.id, series.name)
+                logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author removal")
 
+            change = handler.process(payload, series, None, config, translator, komga_client)
+            if change:
+                change_descriptions.append(change)
+
+            # Special handling for author removal
+            if handler.config_attr == 'authors':
+                if _remove_authors(books, config, change_descriptions, komga_client):
+                    pass  # Changes are handled inside the function
+
+    # Cover image remove (special case)
     if cover_remove_change := _remove_cover_image(series, config):
         change_descriptions.append(cover_remove_change)
-
-    if _remove_authors(books, config, change_descriptions, komga_client):
-        pass  # Changes are handled inside the function
 
     # 2. Search for a match to perform updates.
     candidates = provider.search(series.name)
@@ -502,28 +532,27 @@ def process_single_series(
             books = komga_client.get_books_in_series(series.id, series.name)
             logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author updates")
 
-        # 3. Handle updates only if a match was found and removal wasn't requested for the field.
-        update_actions = [
-            (not config.processing.remove_fields.summary, lambda: _update_summary(payload, series, best_match, config, translator)),
-            (not config.processing.remove_fields.genres, lambda: _update_genres(payload, series, best_match, config, translator)),
-            (not config.processing.remove_fields.status, lambda: _update_status(payload, series, best_match, config)),
-            (not config.processing.remove_fields.tags, lambda: _update_tags(payload, series, best_match, config, translator)),
-            (not config.processing.remove_fields.age_rating, lambda: _update_age_rating(payload, series, best_match, config)),
-        ]
+        # 3. Handle updates
+        for handler in FIELD_HANDLERS:
+            if handler.operation == 'update':
+                # Skip if remove was requested for this field
+                if getattr(config.processing.remove_fields, handler.config_attr, False):
+                    continue
 
-        for condition, update_fn in update_actions:
-            if condition:
-                if change := update_fn():
+                change = handler.process(payload, series, best_match, config, translator, komga_client)
+                if change:
                     change_descriptions.append(change)
 
-        if not config.processing.remove_fields.cover_image:
-            if cover_change := _update_cover_image(series, best_match, config, komga_client):
-                change_descriptions.append(cover_change)
+                # Special handling for author updates
+                if handler.config_attr == 'authors':
+                    if _update_authors(books, best_match, config, change_descriptions, komga_client):
+                        pass  # Changes are handled inside the function
 
-        # Handle author updates for books
-        if not config.processing.remove_fields.authors:
-            if _update_authors(books, best_match, config, change_descriptions, komga_client):
-                pass  # Changes are handled inside the function
+        # Cover image update (special case)
+        cover_handler = CoverImageHandler(operation="update", config_attr="cover_image")
+        cover_change = cover_handler.process(payload, series, best_match, config, translator, komga_client)
+        if cover_change:
+            change_descriptions.append(cover_change)
     else:
         logger.warning(f"No suitable match found for '{series.name}' on {type(provider).__name__}. Skipping metadata updates.")
 

@@ -16,13 +16,15 @@ modules/
 ├── komga_client.py       # HTTP client for Komga API
 ├── processor.py          # Main business logic
 ├── providers/            # External metadata providers
+│   ├── __init__.py      # Factory functions
 │   ├── base.py          # Common interface (Strategy Pattern)
-│   ├── anilist_provider.py  # AniList implementation
-│   └── # Other providers (MyAnimeList, etc.)
+│   ├── anilist.py       # AniList implementation
+│   └── utils.py         # Provider utilities
 ├── translators/          # Translation services
+│   ├── __init__.py      # Factory functions
 │   ├── base.py          # Common interface
-│   ├── google_translator.py  # Google Translate implementation
-│   └── deepl_translator.py   # DeepL implementation
+│   ├── google.py        # Google Translate implementation
+│   └── deepl.py         # DeepL implementation
 └── utils.py              # Shared utilities
 ```
 
@@ -67,20 +69,38 @@ def get_translator(name: str) -> Translator:
         return DeepLTranslator(...)
 ```
 
-### 3. Template Method Pattern - Processing
+### 3. Handler Pattern - Field Processing
 
-The `Processor` class defines a template for series processing:
+The `processor.py` module uses a `FieldHandler` system for metadata field processing:
 
 ```python
-class Processor:
-    def process_series_batch(self, config):
-        # 1. Fetch series
-        series = self._fetch_series()
-        # 2. Process each series
-        for serie in series:
-            self._process_single_serie(serie)
-        # 3. Generate report
-        self._generate_report()
+@dataclass
+class FieldHandler:
+    field_name: str  # e.g., "age_rating", "summary"
+    operation: str   # "update" or "remove"
+    config_attr: str # e.g., "age_rating"
+
+    def process(self, payload: Dict, series: KomgaSeries,
+                best_match: Optional[AniListMedia], config: AppConfig,
+                translator: Optional[Translator]) -> Optional[str]:
+        # Check config, locks, then call specific _process_field
+        return self._process_field(payload, series, best_match, config, translator)
+
+# Specialized handlers for each field type
+class AgeRatingHandler(FieldHandler):
+    def _process_field(self, payload, series, best_match, config, translator):
+        # Age rating specific logic
+        if best_match.isAdult:
+            payload['ageRating'] = 18
+        return "Age Rating: Set to 18 (Adult)"
+
+# Global registry and usage
+FIELD_HANDLERS = [SummaryHandler(...), AgeRatingHandler(...), ...]
+
+def process_single_series(series, config, komga_client, provider, translator):
+    for handler in FIELD_HANDLERS:
+        if handler.operation == 'remove':
+            change = handler.process(payload, series, None, config, translator, komga_client)
 ```
 
 ### 4. Observer Pattern - Metrics

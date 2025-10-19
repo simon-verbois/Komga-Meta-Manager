@@ -14,12 +14,14 @@ modules/
 ├── komga_client.py       # Client for Komga API
 ├── processor.py          # Main processing logic
 ├── providers/            # Metadata providers
+│   ├── __init__.py      # Factory functions
 │   ├── base.py          # Common interface
-│   └── anilist_provider.py  # AniList implementation
+│   └── anilist.py       # AniList implementation
 └── translators/          # Translators
+    ├── __init__.py      # Factory functions
     ├── base.py          # Common interface
-    ├── google_translator.py  # Google Translate implementation
-    └── deepl_translator.py   # DeepL implementation
+    ├── google.py        # Google Translate implementation
+    └── deepl.py         # DeepL implementation
 ```
 
 ## 🧪 Tests
@@ -40,21 +42,27 @@ tests/
 
 ### Running Tests
 
+Tests run exclusively in a Docker container via `testing-compose.yml`:
+
 ```bash
-# All tests
-pytest
+# Build and run all tests
+docker compose -f testing-compose.yml up --build
 
-# Specific tests
-pytest tests/test_processor.py
+# For quick code modifications, after initial build:
+docker compose -f testing-compose.yml up --no-build
+```
 
-# With coverage
-pytest --cov=modules --cov-report=html
+The testing container automatically executes pytest with the following commands:
+- Complete tests with coverage
+- Stop on first error and exit with error code if failed
 
-# Slow tests only
-pytest -m slow
+#### Test filtering (not available directly, modify compose if needed)
 
-# Unit tests only (default)
-pytest -m unit
+```bash
+# To filter: Modify testing-compose.yml to add pytest arguments
+pytest tests/test_processor.py  # Specific tests
+pytest -m slow                 # Slow tests only
+pytest --cov-report=html       # HTML coverage
 ```
 
 ### Writing Tests
@@ -89,93 +97,54 @@ def test_example():
 
 ### Environment
 
-1. Create a virtual environment:
+**Important:** Komga Meta Manager runs exclusively in Docker containers. No local development or execution is supported.
+
+### Docker Development
+
+All development activities use the provided Docker infrastructure:
+
+#### Development configuration
+
+1. **Build and tests:** Use the provided `testing-compose.yml` to run tests in a container:
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# or
-.venv\Scripts\activate     # Windows
+docker compose -f testing-compose.yml up --build
 ```
 
-2. Install dependencies:
+2. **Manual execution:** To quickly test changes:
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+docker compose -f compose.yml run --rm komga-meta-manager
 ```
 
-3. Install in development mode:
-```bash
-pip install -e .
-```
-
-### Pre-commit hooks
-
-To maintain code quality:
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-Hooks verify:
-- Code formatting (black)
-- Import sorting (isort)
-- Linting (flake8)
-- Automated tests
-
-### Debugging
-
-#### Debug mode
-
-Enable debug mode in configuration:
-
+3. **Debug mode:** Enable detailed logs in your configuration:
 ```yaml
 system:
   debug: true
 ```
 
-#### Detailed logs
+#### Development structure
 
-Add temporary logs:
-
-```python
-import logging
-logger = logging.getLogger(__name__)
-logger.debug(f"Processing: {variable}")
 ```
-
-#### Breakpoints
-
-Use `pdb` for interactive debugging:
-
-```python
-import pdb; pdb.set_trace()
+Komga-Meta-Manager/
+├── modules/        # Python source code
+├── tests/          # Unit/integration tests
+├── config/         # Configuration and templates
+├── compose.yml     # Production Docker
+├── testing-compose.yml # Development Docker
+└── Dockerfile      # Base image
 ```
 
 ## 🚀 Deployment
 
-### Docker
+### Docker Production
 
-The project uses Docker for production:
-
-```bash
-# Build
-docker build -t komga-meta-manager .
-
-# Run
-docker run --rm komga-meta-manager
-```
-
-### Local Development
-
-To test locally:
+The deployment is done exclusively via Docker:
 
 ```bash
-# Dry-run mode
-python -m modules.main
+# Production
+docker compose up -d
 
-# With custom configuration
-python -m modules.main --config /path/to/config.yml
+# Single execution
+docker compose run --rm komga-meta-manager
 ```
 
 ## 📋 Best Practices
