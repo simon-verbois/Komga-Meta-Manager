@@ -11,6 +11,28 @@ import psutil
 from modules.config import load_config, AppConfig
 from modules.processor import process_libraries
 
+class FrameFormatter(logging.Formatter):
+    def format(self, record):
+        formatted = super().format(record)
+        msg = record.getMessage()
+        if msg.startswith('center:'):
+            content = msg[7:].strip()
+            padded = content.center(100)
+            msg_part = f"|{padded}|"
+        elif msg.startswith('left:'):
+            content = msg[6:]
+            padded = content.ljust(100)
+            msg_part = f"|{padded}|"
+        elif msg.startswith('|') and msg.endswith('|'):
+            # already formatted frame line
+            msg_part = msg
+        else:
+            msg_part = msg
+        level_end = formatted.rfind('] ') + 2
+        return formatted[:level_end] + msg_part
+
+
+
 def display_header():
     """Displays header information in log format."""
     # Read version
@@ -39,30 +61,43 @@ def display_header():
     logging.info("|====================================================================================================|")
     logging.info("|                                                                                                    |")
     logging.info("|                         _  __                      __  __     _                                    |")
-    logging.info("|                         | |/ /___ _ __  __ _ __ _  |  \/  |___| |_ __ _                            |")
-    logging.info("|                         | ' </ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
-    logging.info("|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\__\__,_|                           |")
+    logging.info(r"|                         | |/ /___ _ __  __ _ __ _  |  \/  |___| |_ __ _                            |")
+    logging.info(r"|                         | ' </ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
+    logging.info(r"|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\__\__,_|                           |")
     logging.info("|                                         |___/                                                      |")
-    logging.info("|                                                                                                    |")
     logging.info("|                                         M  A  N  A  G  E  R                                        |")
     logging.info("|                                                                                                    |")
-    logging.info("|  Version: {}{}                                                                           |".format(version, docker_str))
-    logging.info("|  Platform: {}                                           |".format(platform_str))
-    logging.info("|  Total Memory: {} GB                                                                               |".format(total_mem))
-    logging.info("|  Available Memory: {} GB                                                                           |".format(avail_mem))
-    logging.info("|  Process Priority: {}                                                                          |".format(prio_str))
+    logging.info("left:  Version: {}{}".format(version, docker_str))
+    logging.info("left:  Platform: {}".format(platform_str))
+    logging.info("left:  Total Memory: {} GB".format(total_mem))
+    logging.info("left:  Available Memory: {} GB".format(avail_mem))
+    logging.info("left:  Process Priority: {}".format(prio_str))
     logging.info("|====================================================================================================|")
-    logging.info("|                                            Starting Run                                            |")
+    logging.info("center:Starting Run")
     logging.info("|====================================================================================================|")
 
 def setup_logging(debug: bool = False):
     """Configures the root logger."""
     level = logging.DEBUG if debug else logging.INFO
+    if debug:
+        formatter = FrameFormatter(
+            '%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+    else:
+        formatter = FrameFormatter(
+            '%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
     logging.basicConfig(
         level=level,
-        format='%(asctime)s [%(pathname)s:%(lineno)d]             [%(levelname)s]     %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S,%f'
+        handlers=[logging.StreamHandler()],
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
+    # Apply the formatter to the root logger's handler
+    handler = logging.getLogger().handlers[0]
+    handler.setFormatter(formatter)
     if not debug:
         logging.getLogger("gql").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.INFO)
@@ -100,7 +135,7 @@ def main():
         app_config = load_config()
         setup_logging(app_config.system.debug)
         display_header()
-        logging.info("Configuration loaded successfully.")
+        logging.info("left:  Configuration loaded successfully.")
         if app_config.system.dry_run:
             logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
 
