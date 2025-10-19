@@ -3,18 +3,65 @@
 Main entry point for the Manga Manager application.
 """
 import logging
+import os
+import platform
 import time
 import schedule
+import psutil
 from modules.config import load_config, AppConfig
 from modules.processor import process_libraries
+
+def display_header():
+    """Displays header information in log format."""
+    # Read version
+    with open('VERSION', 'r') as f:
+        version = f.read().strip()
+
+    # Check Docker
+    docker_str = ' (Docker)' if os.path.exists('/.dockerenv') else ''
+
+    # Platform
+    platform_str = platform.platform()
+
+    # Memory
+    total_mem = int(psutil.virtual_memory().total / (1024**3))  # GB
+    avail_mem = int(psutil.virtual_memory().available / (1024**3))  # GB
+
+    # Process priority
+    nice = psutil.Process().nice()
+    if nice < 0:
+        prio_str = 'high'
+    elif nice > 0:
+        prio_str = 'low'
+    else:
+        prio_str = 'normal'
+
+    logging.info("|====================================================================================================|")
+    logging.info("|                                                                                                    |")
+    logging.info("|                         _  __                      __  __     _                                    |")
+    logging.info("|                         | |/ /___ _ __  __ _ __ _  |  \/  |___| |_ __ _                            |")
+    logging.info("|                         | ' </ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
+    logging.info("|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\__\__,_|                           |")
+    logging.info("|                                         |___/                                                      |")
+    logging.info("|                                                                                                    |")
+    logging.info("|                                         M  A  N  A  G  E  R                                        |")
+    logging.info("|                                                                                                    |")
+    logging.info("|  Version: {}{}                                                                           |".format(version, docker_str))
+    logging.info("|  Platform: {}                                           |".format(platform_str))
+    logging.info("|  Total Memory: {} GB                                                                               |".format(total_mem))
+    logging.info("|  Available Memory: {} GB                                                                           |".format(avail_mem))
+    logging.info("|  Process Priority: {}                                                                          |".format(prio_str))
+    logging.info("|====================================================================================================|")
+    logging.info("|                                            Starting Run                                            |")
+    logging.info("|====================================================================================================|")
 
 def setup_logging(debug: bool = False):
     """Configures the root logger."""
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
         level=level,
-        format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format='%(asctime)s [%(pathname)s:%(lineno)d]             [%(levelname)s]     %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S,%f'
     )
     if not debug:
         logging.getLogger("gql").setLevel(logging.WARNING)
@@ -52,6 +99,7 @@ def main():
     try:
         app_config = load_config()
         setup_logging(app_config.system.debug)
+        display_header()
         logging.info("Configuration loaded successfully.")
         if app_config.system.dry_run:
             logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
