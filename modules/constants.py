@@ -25,15 +25,12 @@ KOMGA_SERIES_PAGE_SIZE = 100
 # Cache Configuration
 CACHE_TTL_HOURS_DEFAULT = 168  # 7 days
 CACHE_SAVE_INTERVAL = 50  # Save cache every N additions
-TRANSLATION_CACHE_FILENAME = "translation_cache.json"
-METADATA_CACHE_FILENAME = "metadata_cache.json"
 
 # File Paths
 CONFIG_DIR = Path("/config")
 CACHE_DIR = CONFIG_DIR / "cache"
 CONFIG_FILE = CONFIG_DIR / "config.yml"
 TRANSLATIONS_CONFIG_FILE = CONFIG_DIR / "translations.yml"
-TRANSLATION_CACHE_PATH = CACHE_DIR / TRANSLATION_CACHE_FILENAME
 
 # AniList Status Mapping
 ANILIST_STATUS_TO_KOMGA = {
@@ -48,7 +45,6 @@ LOG_FORMAT = '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s'
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 # Circuit Breaker Defaults - Technical resilience settings
-# These are internal technical parameters, not user configuration
 CIRCUIT_BREAKER_DEFAULTS = {
     'komga': {
         'failure_threshold': 5,

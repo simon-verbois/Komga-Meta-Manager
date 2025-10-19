@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List
 
 from modules.cache import Cache
+from modules.cache_naming import get_metadata_cache_filename
 from modules.models import AniListMedia
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,8 @@ class MetadataProvider(ABC):
 
     def __init__(self, cache_dir: Path, cache_ttl_hours: int):
         provider_name = self.__class__.__name__.lower().replace("provider", "")
-        self.cache = Cache(provider_name, cache_dir, cache_ttl_hours)
+        cache_filename = get_metadata_cache_filename(provider_name)
+        self.cache = Cache(cache_filename, cache_dir, cache_ttl_hours)
 
     @abstractmethod
     def _perform_search(self, search_term: str) -> List[AniListMedia]:

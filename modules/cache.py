@@ -15,8 +15,8 @@ class Cache:
     A simple file-based cache that stores key-value pairs with timestamps
     and supports a Time-To-Live (TTL) for cache entries.
     """
-    def __init__(self, cache_name: str, cache_dir: Path, ttl_hours: int):
-        self.cache_path = cache_dir / f"{cache_name}_cache.json"
+    def __init__(self, cache_filename: str, cache_dir: Path, ttl_hours: int):
+        self.cache_path = cache_dir / cache_filename
         self.ttl_seconds = ttl_hours * 3600
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._load_from_disk()

@@ -6,8 +6,8 @@ This module acts as a factory for creating translator instances.
 import logging
 from typing import Optional, Any
 from .base import Translator
-from .google_translator import GoogleTranslator
-from .deepl_translator import DeepLTranslator
+from .google import GoogleTranslator
+from .deepl import DeepLTranslator
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ from typing import Optional
 
 from modules.config import ProviderConfig
 from .base import MetadataProvider
-from .anilist_provider import AnilistProvider
+from .anilist import AnilistProvider
 
 logger = logging.getLogger(__name__)
 
