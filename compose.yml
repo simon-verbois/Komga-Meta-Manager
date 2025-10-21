@@ -1,0 +1,10 @@
+---
+services:
+  komga-meta-manager:
+    image: simonverbois/komga-meta-manager
+    container_name: komga-meta-manager
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./config:/config

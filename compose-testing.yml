@@ -1,0 +1,10 @@
+services:
+  komga-meta-manager:
+    build: .
+    container_name: komga-meta-manager
+    restart: no
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./config:/config
+    command: sh -c "python -m modules.main"

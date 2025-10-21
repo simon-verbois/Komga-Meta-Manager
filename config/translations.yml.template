@@ -1,0 +1,8 @@
+# In some cases (especially Google Translate) it fails to translate certain words, so you have to translate them manually.
+
+fr:
+  Supernatural: Surnaturel
+  
+# You can add other languages as well
+# es:
+#   Supernatural: Sobrenatural

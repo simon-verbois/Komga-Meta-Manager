@@ -1,0 +1,34 @@
+name: Build and push with manual commands
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to local Gitea registry
+        run: echo "${{ secrets.LOCAL_GITEA_REGISTRY_TOKEN }}" | docker login ${{ vars.LOCAL_GITEA_URL }} -u "${{ secrets.LOCAL_GITEA_REGISTRY_USER }}" --password-stdin
+
+      - name: Build, Tag and Push image
+        run: |
+          IMAGE_NAME="${{ vars.LOCAL_GITEA_URL }}/simonverbois/komga-meta-manager"
+          
+          echo "Building image $IMAGE_NAME:main..."
+          docker build -t "$IMAGE_NAME:main" .
+          
+          echo "Tagging image as $IMAGE_NAME:latest..."
+          docker tag "$IMAGE_NAME:main" "$IMAGE_NAME:latest"
+          
+          echo "Pushing tag 'main'..."
+          docker push "$IMAGE_NAME:main"
+          
+          echo "Pushing tag 'latest'..."
+          docker push "$IMAGE_NAME:latest"
+          
+          echo "✅ Push successful!"
