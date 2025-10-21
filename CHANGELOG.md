@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2025-10-xx
+## [0.5.0] - 2025-10-21
 
 ### Added
 - Add feature: Watcher (to update series when they are created on Komga)
@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed authors metadata
+- Add duplicate cover feature
+
+### Removed
+- Remove unitary test, was overkill
 
 ## [0.4.0] - 2025-10-20
 
