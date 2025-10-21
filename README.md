@@ -12,7 +12,7 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 
 ## ✨ Features
 
-* **Automated Metadata Fetching:** Automatically searches for and fetches **Summary**, **Status**, **Genres**, **Tags**, **Age Rating**, **Authors**, and **Cover Images** for your Komga series from **AniList**.
+* **Automated Metadata Fetching:** Automatically searches for and fetches **Summary**, **Status**, **Genres**, **Tags**, **Age Rating**, **Score**, **Authors** (writers/pencillers), **Provider Links**, and **Cover Images** for your Komga series from **AniList**.
 * **Targeted Processing:** Only processes libraries you specify in the configuration.
 * **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
 * **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
@@ -22,8 +22,7 @@ An automated tool to enrich your Komga manga series metadata using the AniList A
 * **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
 * **Real-time Watcher:** Automatically detects and processes new series added to Komga libraries without waiting for the next scheduled run.
 * **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
-* **Metadata Removal:** Configure the tool to automatically remove specific metadata fields (e.g., old genres or tags) during processing.
-* **Unit Testing Suite:** Extensive test coverage with pytest for reliable, maintainable code.
+* **Metadata Removal:** Configure the tool to automatically remove specific metadata fields (e.g., old genres, tags, or scores) during processing.
 
 ## 📷 Example (Before/After)
 
@@ -130,43 +129,13 @@ Check the logs to ensure the application is running correctly and connecting to 
 docker logs komga-meta-manager -f
 ```
 
-## 🧪 Testing
-
-The application includes a comprehensive test suite.
-
-To run the tests, you can use a dedicated `testing-compose.yml` file:
-
-**`testing-compose.yml`**
-
-```yaml
-services:
-  komga-meta-manager:
-    build: .
-    container_name: komga-meta-manager-test
-    restart: no
-    environment:
-      - TZ=Europe/Brussels
-    volumes:
-      - ./config:/config
-      - ./tests:/tests
-    command: sh -c "python -m pytest /tests/ -v --tb=short && echo && echo && echo && python -m modules.main"
-```
-
-To execute the tests (and then start the application if tests pass):
-
-```bash
-docker compose -f testing-compose.yml up --build
-```
-
-This will build the image, run all unit tests, and if they pass, it will then start the application. If any tests fail, the container will exit, reporting the failures.
 
 ## 📖 Documentation
 
 Complete documentation is available in the `docs/` directory:
 
-  * **[Development Guide](https://www.google.com/search?q=docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices.
-  * **[Testing Guide](https://www.google.com/search?q=docs/TESTING.md)**: Comprehensive testing instructions and strategies.
-  * **[Architecture](https://www.google.com/search?q=docs/ARCHITECTURE.md)**: Detailed architectural documentation.
+  * **[Development Guide](docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices.
+  * **[Architecture](docs/ARCHITECTURE.md)**: Detailed architectural documentation.
 
 ## 📜 Changelog
 
@@ -174,11 +143,10 @@ Check the [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and ver
 
 ## 🤝 Contributing
 
-We welcome contributions\! Please see the [Development Guide](https://www.google.com/search?q=docs/DEVELOPMENT.md) for:
+We welcome contributions\! Please see the [Development Guide](docs/DEVELOPMENT.md) for:
 
   * Development environment setup
   * Code style guidelines
-  * Testing requirements
   * Pull request process
 
 ## ⚙️ Resources

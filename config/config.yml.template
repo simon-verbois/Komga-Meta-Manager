@@ -33,17 +33,23 @@ processing:
     summary: true
     status: true
     genres: true
+    tags:
+      score: true        # AniList average score as tag
     authors:
       writers: true     # Story (scripteurs)
       pencillers: true  # Art (dessinateurs)
+    link: true          # AniList page link
     cover_image: true
   remove_fields:         # Fields to remove (set to true to enable). Takes priority over update_fields.
     summary: false
     genres: false
+    tags:
+      score: false       # Remove score tags
     status: false
     authors:
       writers: false
       pencillers: false
+    link: false          # Remove AniList links
     cover_image: false
 
 translation:

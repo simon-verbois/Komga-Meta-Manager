@@ -24,74 +24,6 @@ modules/
     └── deepl.py         # DeepL implementation
 ```
 
-## 🧪 Tests
-
-### Test Structure
-
-Tests are organized in the `tests/` folder:
-
-```
-tests/
-├── __init__.py
-├── conftest.py           # Fixtures and configuration
-├── pytest.ini           # Pytest configuration
-├── test_processor.py    # Processing logic tests
-├── test_metrics.py      # Metrics tests
-└── test_config.py       # Configuration validation tests (TODO)
-```
-
-### Running Tests
-
-Tests run exclusively in a Docker container via `testing-compose.yml`:
-
-```bash
-# Build and run all tests
-docker compose -f testing-compose.yml up --build
-
-# For quick code modifications, after initial build:
-docker compose -f testing-compose.yml up --no-build
-```
-
-The testing container automatically executes pytest with the following commands:
-- Complete tests with coverage
-- Stop on first error and exit with error code if failed
-
-#### Test filtering (not available directly, modify compose if needed)
-
-```bash
-# To filter: Modify testing-compose.yml to add pytest arguments
-pytest tests/test_processor.py  # Specific tests
-pytest -m slow                 # Slow tests only
-pytest --cov-report=html       # HTML coverage
-```
-
-### Writing Tests
-
-#### Principles
-- Use `pytest` as testing framework
-- Organize tests in classes with descriptive names
-- Use fixtures for common configuration
-- Mock external calls (APIs, filesystem)
-- Test error cases as well as happy paths
-
-#### Test Example
-
-```python
-import pytest
-from unittest.mock import Mock
-
-def test_example():
-    # Arrange
-    component = Component()
-    config = Mock()
-
-    # Act
-    result = component.process(config)
-
-    # Assert
-    assert result.success is True
-    assert result.data is not None
-```
 
 ## 🔧 Development
 
@@ -105,7 +37,7 @@ All development activities use the provided Docker infrastructure:
 
 #### Development configuration
 
-1. **Build and tests:** Use the provided `testing-compose.yml` to run tests in a container:
+1. **Build and test:** Use the provided `testing-compose.yml` to build and test changes in a container:
 ```bash
 docker compose -f testing-compose.yml up --build
 ```
@@ -126,7 +58,6 @@ system:
 ```
 Komga-Meta-Manager/
 ├── modules/        # Python source code
-├── tests/          # Unit/integration tests
 ├── config/         # Configuration and templates
 ├── compose.yml     # Production Docker
 ├── testing-compose.yml # Development Docker
@@ -174,10 +105,9 @@ docker compose run --rm komga-meta-manager
 ### Workflow
 
 1. Create a feature branch: `git checkout -b feature/feature-name`
-2. Write tests for the new functionality
-3. Implement the functionality
-4. Verify all tests pass
-5. Submit PR with detailed description
+2. Implement the functionality with manual testing
+3. Test changes manually using the Docker container
+4. Submit PR with detailed description
 
 ### Commit Conventions
 
@@ -192,8 +122,8 @@ docker compose run --rm komga-meta-manager
 ### Reviews
 
 - All PRs must be reviewed
-- Tests must pass on CI
-- Coverage must be maintained > 80%
+- Code must follow established patterns and best practices
+- Manual testing should validate functionality
 
 ## 📊 Monitoring
 
