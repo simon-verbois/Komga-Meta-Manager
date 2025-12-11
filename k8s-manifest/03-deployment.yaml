@@ -1,0 +1,65 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: komga-meta-manager
+  namespace: komga-meta-manager
+  labels:
+    app: komga-meta-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: komga-meta-manager
+  template:
+    metadata:
+      labels:
+        app: komga-meta-manager
+    spec:
+      containers:
+      - name: komga-meta-manager
+        image: simonverbois/komga-meta-manager:latest
+        command: ["python", "-m", "modules.main"]
+        env:
+        - name: TZ
+          value: "Europe/Brussels"
+        resources:
+          limits:
+            cpu: "4"
+            memory: "2G"
+          requests:
+            cpu: "1"
+            memory: "512M"
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - -f
+            - "python -m modules.main"
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pgrep
+            - -f
+            - "python -m modules.main"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config/config.yml
+          subPath: config.yml
+        - name: cache-volume
+          mountPath: /config/cache
+
+      volumes:
+      - name: config-volume
+        configMap:
+          name: komga-meta-manager-config
+      - name: cache-volume
+        persistentVolumeClaim:
+          claimName: komga-meta-manager-cache

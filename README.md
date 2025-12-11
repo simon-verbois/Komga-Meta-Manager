@@ -8,149 +8,58 @@
 
 # Komga Meta Manager
 
-An automated tool to enrich your Komga manga series metadata using the AniList API, featuring optional translation and persistent caching.
+Automatically enriches Komga manga series metadata using AniList API, with optional translation and persistent caching.
 
-## ✨ Features
+## Features
 
-* **Automated Metadata Fetching:** Automatically searches for and fetches **Summary**, **Status**, **Genres**, **Tags**, **Age Rating**, **Score**, **Authors** (writers/pencillers), **Provider Links**, and **Cover Images** for your Komga series from **AniList**.
-* **Targeted Processing:** Only processes libraries you specify in the configuration.
-* **Translation Support:** Seamlessly translates fetched metadata (like summaries, genres, and tags) into your preferred language using **Google Translate** or **DeepL**.
-* **Smart Updates:** Choose to only fill in empty metadata fields or overwrite existing ones.
-* **Advanced Caching:** Multi-level caching system with automatic periodic saves to prevent data loss.
-* **Robust Error Handling:** Configurable timeouts, exponential backoff retry logic, and graceful error recovery.
-* **Comprehensive Metrics:** Detailed processing statistics, cache performance, and API call monitoring.
-* **Flexible Operation:** Run once manually or enable the built-in scheduler to run the process daily at a set time.
-* **Real-time Watcher:** Automatically detects and processes new series added to Komga libraries without waiting for the next scheduled run.
-* **Dry-Run Mode:** Test your configuration and see exactly what changes will be made before applying them to Komga.
-* **Metadata Removal:** Configure the tool to automatically remove specific metadata fields (e.g., old genres, tags, or scores) during processing.
+- **Auto-detection** of series in specified Komga libraries
+- **High-performance** fetching with AniList API integration
+- **Smart caching** to avoid re-processing and prevent data loss
+- **Scheduled processing** or on-demand execution
+- **Translation support** using Google Translate or DeepL
+- **Docker ready** for production deployment
+- **YAML configuration** for all settings
 
-## 📷 Example (Before/After)
+## Quick Start
 
-<p align="center">
-  <div style="display: flex; justify-content: center; gap: 20px;">
-    <div style="border: 1px solid #ccc; padding: 10px; border-radius: 5px; text-align: center;">
-      <h3>Before</h3>
-      <img src="images/before.png" alt="Before image - Missing metadata for the series" style="width: 300px; height: auto; display: block; margin: 0 auto;"/>
-    </div>
-    <div style="border: 1px solid #ccc; padding: 10px; border-radius: 5px; text-align: center;">
-      <h3>After</h3>
-      <img src="images/after.png" alt="After image - Metadata correctly populated by the tool" style="width: 300px; height: auto; display: block; margin: 0 auto;"/>
-    </div>
-  </div>
-</p>
+### Configuration
 
-## 🚀 Installation and Setup
+See `config/config.yml.template` for all available options with inline comments explaining each parameter.<br>
+Rename the template to `config/config.yml`.
 
-The easiest way to run the Komga Meta Manager is using Docker.
-
-### Prerequisites
-
-1.  A running instance of **Komga**.
-2.  A Komga **API Key** (recommended to create a specific read/write user for this tool).
-3.  **Docker** and **Docker Compose** installed on your system.
-
-### 1\. Configure the Project
-
-The application is configured using a single YAML file named `config.yml`. It is crucial to set your Komga server details and desired processing logic in this file.
-
-1.  Create a dedicated directory for your Komga Meta Manager setup (e.g., `komga-meta-manager`).
-2.  Inside this directory, create a subdirectory named `config`.
-3.  Create the main configuration file, `config/config.yml`, starting with the config.yml.template.
-4.  *(Optional but recommended)* You can also create a file named `config/translations.yml` to define manual translations for specific genres or tags, which overrides the automatic translator.
-
-#### Configuration Parameters Explained
-
-The table below explains every parameter in the `config.yml` file.
-
-| Section | Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **`system`** | **`dry_run`** | Boolean | `false` | If **`true`**, the script runs without making **any changes** to Komga; it only logs proposed updates. |
-| | **`debug`** | Boolean | `false` | Enables verbose logging (DEBUG level) for troubleshooting. |
-| | **`scheduler.enabled`** | Boolean | `true` | If **`true`**, the job runs daily at the specified time. If **`false`**, it runs once and the container exits. |
-| | **`scheduler.run_at`** | String | `"04:00"` | The time of day to run the job, in **HH:MM** (24-hour) format. Only used if `scheduler.enabled: true`. |
-| | **`watcher.enabled`** | Boolean | `false` | If **`true`**, enables the real-time watcher to automatically process new series added to Komga libraries. |
-| | **`watcher.polling_interval_minutes`** | Integer | `5` | How often (in minutes) the watcher checks for new series. Only used if `watcher.enabled: true`. |
-| **`komga`** | **`url`** | String | *Required* | The full URL of your Komga instance (e.g., `https://komga.example.com`). |
-| | **`api_key`** | String | *Required* | Your **Komga API Key**. |
-| | **`libraries`** | List of Strings | *Required* | A list of the **exact names** of the Komga libraries you want to process. |
-| | **`verify_ssl`** | Boolean | `true` | If set to `false`, disables SSL certificate verification (useful for self-signed certificates, but less secure). |
-| **`provider`** | **`name`** | String | `"anilist"` | The metadata source to use. Currently, only **`anilist`** is supported. |
-| | **`min_score`** | Integer | `80` | The minimum score (from 0 to 100) required for a fuzzy title match to be considered valid. Higher values mean stricter matching. |
-| **`processing`** | **`overwrite_existing`** | Boolean | `false` | If **`true`**, fetched metadata will **overwrite** any existing Komga metadata. If **`false`**, it only fills in fields that are currently empty or unlocked. |
-| | **`force_unlock`** | Boolean | `false` | If **`true`**, the script will automatically **unlock** any locked metadata fields in Komga before updating them. This allows for a complete refresh of metadata. |
-| | **`exclude_series`** | List of Strings | `[]` | A list of exact series titles to **exclude** from processing. |
-| | **`update_fields`** | Object | (All `false` by default) | An object defining which fields to update (set to `true` to enable). Example: `title: true, summary: true`. |
-| | **`remove_fields`** | Object | (All `false` by default) | An object defining which fields to remove (set to `true` to enable). Note: Takes priority over `update_fields`. Example: `genres: true, tags: true`. |
-| **`translation`** | **`enabled`** | Boolean | `true` | If **`true`**, metadata (summary, genres, tags) will be translated into the `target_language`. |
-| | **`provider`** | String | `"google"` | The translation service to use. Supported: **`google`**, **`deepl`**. |
-| | **`deepl.api_key`** | String | *Required if provider is `deepl`* | Your **DeepL API Key**. You can get one [here](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans). |
-| | **`target_language`** | String | `"fr"` | The ISO 639-1 code for the language you want to translate to (e.g., `fr`, `en`, `es`). |
-*DeepL will return a better result, but requires an API key.*
-
-### 2\. Run with Docker Compose
-
-1.  In the root directory of your project (the one containing the `config` folder), adapt the `compose.yml` file content:
-
-**`compose.yml`**
-
-```yaml
-services:
-  komga-meta-manager:
-    image: simonverbois/komga-meta-manager
-    container_name: komga-meta-manager
-    restart: unless-stopped
-    environment:
-      # Set your timezone for proper scheduling
-      - TZ=Europe/Brussels
-    volumes:
-      # Mount the configuration folder where the app will look for config.yml and cache files
-      - ./config:/config
-```
-
-2.  Start the container in detached mode:
-
-<!-- end list -->
+### Start
 
 ```bash
-docker compose up -d
+# Clone repository
+git clone <repository-url>
+cd Komga-Meta-Manager
+
+# Edit compose and config with your data
+vim compose.yml
+vim config/config.yml
+
+# Build and run
+docker compose up
 ```
 
-*To run the job once and remove the container afterwards (e.g., for testing or manual runs without scheduling), use:*
+## Deployment
+
+- **Docker**: See compose.yml for production.
+
+## Development
+
+Local build and run with:
 
 ```bash
-docker compose run --rm komga-meta-manager
+docker compose -f compose-testing.yml build && docker compose -f compose-testing.yml up
 ```
 
-### 3\. Verification
+## License
 
-Check the logs to ensure the application is running correctly and connecting to Komga:
+See LICENSE file.
 
-```bash
-docker logs komga-meta-manager -f
-```
+## Disclaimer
 
+This is a personal automation script I use on my home server to enrich Komga manga series metadata. I'm sharing it with the community as-is, without any warranty or guarantee of maintenance.
 
-## 📖 Documentation
-
-Complete documentation is available in the `docs/` directory:
-
-  * **[Development Guide](docs/DEVELOPMENT.md)**: Architecture, development setup, and best practices.
-  * **[Architecture](docs/ARCHITECTURE.md)**: Detailed architectural documentation.
-
-## 📜 Changelog
-
-Check the [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and versions.
-
-## 🤝 Contributing
-
-We welcome contributions\! Please see the [Development Guide](docs/DEVELOPMENT.md) for:
-
-  * Development environment setup
-  * Code style guidelines
-  * Pull request process
-
-## ⚙️ Resources
-
-  * [Docker Hub Repository](https://hub.docker.com/r/simonverbois/komga-meta-manager)
-  * [Komga Homepage](https://komga.org/)
-  * [Komga API Documentation](https://komga.org/guides/rest-api/)
+This project was developed with the assistance of a self-hosted Mistral AI model.

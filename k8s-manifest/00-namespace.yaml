@@ -1,0 +1,7 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: komga-meta-manager
+  labels:
+    name: komga-meta-manager

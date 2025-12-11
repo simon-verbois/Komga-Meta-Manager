@@ -1,0 +1,68 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: komga-meta-manager-config
+  namespace: komga-meta-manager
+data:
+  config.yml: |
+    # ================================================================= #
+    #             Komga Meta Manager Configuration File                 #
+    # ================================================================= #
+
+    system:
+      dry_run: false         # Set to true to simulate changes without applying them to Komga
+      debug: false           # Enable verbose logging
+      scheduler:
+        enabled: true        # Enable daily scheduled runs
+        run_at: "04:00"      # Time of day to run the job (HH:MM)
+      watcher:
+        enabled: false       # Enable watcher for new series added to Komga
+        polling_interval_minutes: 5  # How often to check for new series (in minutes)
+
+    komga:
+      url: "http://localhost:8080" # Your Komga instance URL
+      api_key: "YOUR_KOMGA_API_KEY"
+      libraries:             # List of Komga libraries to process
+        - "Manga"
+        - "Webtoons"
+      verify_ssl: true       # Set to false to disable SSL verification (less secure)
+
+    provider:
+      name: "anilist"        # Currently, only 'anilist' is supported
+      min_score: 80          # Minimum score for a valid title match (0-100)
+
+    processing:
+      overwrite_existing: false # Overwrite existing metadata or only fill empty fields
+      force_unlock: false    # Unlock locked fields before updating
+      exclude_series:        # List of series titles to exclude from processing
+        - "My Excluded Series"
+      update_fields:         # Fields to update if new data is found (set to true to enable)
+        summary: true
+        status: true
+        genres: true
+        tags:
+          score: true        # AniList average score as tag
+        authors:
+          writers: true     # Story (scripteurs)
+          pencillers: true  # Art (dessinateurs)
+        link: true          # AniList page link
+        cover_image: true
+      remove_fields:         # Fields to remove (set to true to enable). Takes priority over update_fields.
+        summary: false
+        genres: false
+        tags:
+          score: false       # Remove score tags
+        status: false
+        authors:
+          writers: false
+          pencillers: false
+        link: false          # Remove AniList links
+        cover_image: false
+
+    translation:
+      enabled: true          # Enable metadata translation
+      provider: "deepl"     # Translation service: 'google' or 'deepl'
+      deepl:
+        api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
+      target_language: "fr"  # ISO 639-1 code (e.g., 'fr', 'en', 'es')

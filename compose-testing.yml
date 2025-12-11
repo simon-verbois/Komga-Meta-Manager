@@ -1,3 +1,6 @@
+# Testing compose
+
+---
 services:
   komga-meta-manager:
     build: .

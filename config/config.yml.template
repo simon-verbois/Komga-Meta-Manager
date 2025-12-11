@@ -54,7 +54,7 @@ processing:
 
 translation:
   enabled: true          # Enable metadata translation
-  provider: "google"     # Translation service: 'google' or 'deepl'
+  provider: "deepl"     # Translation service: 'google' or 'deepl'
   deepl:
     api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
   target_language: "fr"  # ISO 639-1 code (e.g., 'fr', 'en', 'es')
