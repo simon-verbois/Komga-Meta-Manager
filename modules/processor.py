@@ -26,15 +26,154 @@ ANILIST_STATUS_TO_KOMGA = {
     'HIATUS': 'HIATUS'
 }
 
+# Field processing configurations - centralized to avoid repetition
+FIELD_CONFIGS = {
+    'summary': {
+        'update': {
+            'get_value': lambda best_match, translator, config: (
+                clean_html(best_match.description) if best_match.description else None,
+                lambda val: translator.translate(val, config.translation.target_language) if val and translator and config.translation else val
+            ),
+            'default_remove': "",
+            'compare_func': lambda new_val, current_val, config: (
+                None if not config.processing.overwrite_existing and new_val == current_val else True
+            )
+        },
+        'remove': {'default_value': ""}
+    },
+    'genres': {
+        'update': {
+            'get_value': lambda best_match, translator, config: (
+                sorted(list(set(
+                    translator.translate(g, config.translation.target_language) for g in best_match.genres
+                ))) if best_match.genres and translator and config.translation
+                else sorted(list(set(best_match.genres))) if best_match.genres else None,
+                None
+            ),
+            'compare_func': lambda new_val, current_val, config: (
+                None if not config.processing.overwrite_existing and set(new_val or []) == set(current_val or []) else True
+            )
+        },
+        'remove': {'default_value': []}
+    },
+    'status': {
+        'update': {
+            'get_value': lambda best_match, translator, config: (
+                ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper()) if best_match.status else None,
+                None
+            ),
+            'compare_func': lambda new_val, current_val, config: (
+                None if not new_val or (not config.processing.overwrite_existing and new_val == current_val) else True
+            )
+        },
+        'remove': {'default_value': None}
+    },
+    'tags': {
+        'update': {
+            'custom_handler': lambda payload, series, best_match, config, translator, komga_client: _process_tags_update(payload, series, best_match, config)
+        },
+        'remove': {
+            'custom_handler': lambda payload, series, best_match, config, translator, komga_client: _process_tags_remove(payload, series, best_match, config)
+        }
+    },
+    'links': {
+        'update': {
+            'custom_handler': lambda payload, series, best_match, config, translator, komga_client: _process_links_update(payload, series, best_match, config)
+        },
+        'remove': {
+            'custom_handler': lambda payload, series, best_match, config, translator, komga_client: _process_links_remove(payload, series, best_match, config)
+        }
+    }
+}
+
+def _process_tags_update(payload, series, best_match, config):
+    """Custom handler for tags update."""
+    metadata = series.metadata
+    new_tags = set(metadata.tags or [])
+    changes = []
+
+    if config.processing.update_fields.tags.score and best_match and best_match.averageScore is not None and best_match.averageScore > 0:
+        score_tag = f"Score: {best_match.averageScore / 10:.1f}"
+        new_tags = {tag for tag in new_tags if "score:" not in tag.lower()}
+        new_tags.add(score_tag)
+        changes.append(f"added score tag '{score_tag}'")
+
+    new_tags_list = sorted(list(new_tags))
+    current_tags_set = set(metadata.tags or [])
+
+    if current_tags_set == set(new_tags_list):
+        return "- Tags: processed (no changes needed)."
+
+    payload['tags'] = new_tags_list
+    if getattr(metadata, 'tags_lock') and config.processing.force_unlock:
+        payload['tagsLock'] = False
+    return f"- Tags: {', '.join(changes)}" if changes else None
+
+def _process_tags_remove(payload, series, best_match, config):
+    """Custom handler for tags remove."""
+    metadata = series.metadata
+
+    if config.processing.remove_fields.tags.score:
+        new_tags = set(metadata.tags or [])
+        original_count = len(new_tags)
+        new_tags = {tag for tag in new_tags if "score:" not in tag.lower()}
+
+        if len(new_tags) < original_count:
+            new_tags_list = sorted(list(new_tags))
+            payload['tags'] = new_tags_list
+            if getattr(metadata, 'tags_lock') and config.processing.force_unlock:
+                payload['tagsLock'] = False
+            return "- Tags: removed score tag."
+        else:
+            return "- Tags: processed (no score tag to remove)."
+    return None
+
+def _process_links_update(payload, series, best_match, config):
+    """Custom handler for links update."""
+    metadata = series.metadata
+
+    if config.processing.update_fields.link and best_match:
+        new_links = getattr(metadata, 'links', [])
+        provider_label = config.provider.name.capitalize()
+
+        # Remove existing provider links
+        new_links = [link for link in new_links if link.get('label') != provider_label]
+        new_links.append({"label": provider_label, "url": f"https://anilist.co/manga/{best_match.id}"})
+
+        payload['links'] = new_links
+        if hasattr(metadata, 'links_lock') and getattr(metadata, 'links_lock') and config.processing.force_unlock:
+            payload['linksLock'] = False
+        return "- Links: added provider link"
+    return None
+
+def _process_links_remove(payload, series, best_match, config):
+    """Custom handler for links remove."""
+    metadata = series.metadata
+
+    if config.processing.remove_fields.link:
+        new_links = getattr(metadata, 'links', [])
+        original_count = len(new_links)
+        provider_name = config.provider.name.upper()
+        new_links = [link for link in new_links if not link.get('label', '').upper().startswith(provider_name)]
+
+        if len(new_links) < original_count:
+            payload['links'] = new_links
+            if hasattr(metadata, 'links_lock') and getattr(metadata, 'links_lock') and config.processing.force_unlock:
+                payload['linksLock'] = False
+            return "- Links: removed provider link."
+        else:
+            return "- Links: processed (no provider link to remove)."
+    return None
+
 @dataclass
-class FieldHandler:
-    """Handles processing of a single metadata field."""
+class GenericFieldHandler:
+    """Generic field handler that uses configuration mapping."""
     field_name: str
-    operation: str  # 'update' or 'remove'
+    operation: str
     config_attr: str
 
     def process(self, payload: Dict, series: KomgaSeries, best_match: Optional[AniListMedia], config: AppConfig, translator: Optional[Translator], komga_client: Optional[KomgaClient] = None) -> Optional[str]:
-        """Process this field and return change description if any."""
+        """Process this field using the configuration mapping."""
         metadata = series.metadata
 
         # Check if operation is enabled in config
@@ -47,167 +186,53 @@ class FieldHandler:
             return None
 
         # Check lock/force unlock logic
+        current_value = getattr(metadata, self.field_name)
+        is_locked = getattr(metadata, self.field_name + '_lock', False)
+
         if self.operation == 'update':
-            should_process = should_update_field(getattr(metadata, self.field_name), getattr(metadata, self.field_name + '_lock'), config)
+            should_process = should_update_field(current_value, is_locked, config)
         else:
-            should_process = should_remove_field(getattr(metadata, self.field_name), getattr(metadata, self.field_name + '_lock'), config)
+            should_process = should_remove_field(current_value, is_locked, config)
 
         if not should_process:
             return None
 
-        # Process the field
-        return self._process_field(payload, series, best_match, config, translator, komga_client)
+        # Use custom handler if defined, otherwise use generic logic
+        field_config = FIELD_CONFIGS.get(self.field_name, {}).get(self.operation)
+        if field_config and 'custom_handler' in field_config:
+            return field_config['custom_handler'](payload, series, best_match, config, translator, komga_client)
 
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
-        """Subclass-specific field processing logic."""
-        raise NotImplementedError
+        # Generic processing logic
+        return self._process_generic_field(payload, series, best_match, config, translator, field_config)
 
-@dataclass
-class SummaryHandler(FieldHandler):
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
+    def _process_generic_field(self, payload, series, best_match, config, translator, field_config) -> Optional[str]:
+        """Generic field processing using configuration."""
         metadata = series.metadata
 
         if self.operation == 'update':
-            new_value = clean_html(best_match.description) if best_match.description else None
-            if new_value and translator and config.translation:
-                new_value = translator.translate(new_value, config.translation.target_language)
-            if not config.processing.overwrite_existing and new_value == metadata.summary:
+            value_getter, transformer = field_config['get_value'](best_match, translator, config)
+            new_value = transformer(value_getter) if transformer else value_getter
+
+            if new_value is None:
                 return None
-        else:
-            new_value = ""
+
+            # Check if we should skip due to existing value
+            if 'compare_func' in field_config:
+                skip = field_config['compare_func'](new_value, getattr(metadata, self.field_name), config)
+                if skip is None:  # Comparison indicated to skip
+                    return None
+
+        else:  # remove operation
+            new_value = field_config['default_value']
 
         payload[self.field_name] = new_value
         if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
             payload[self.field_name + 'Lock'] = False
-        return f"- {self.field_name.title()}: {'Will be updated' if self.operation == 'update' else 'Will be removed'}."
-
-@dataclass
-class GenresHandler(FieldHandler):
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
-        metadata = series.metadata
 
         if self.operation == 'update':
-            if not best_match.genres:
-                return None
-            translated_genres = set(best_match.genres)
-            if translator and config.translation:
-                translated_genres = {translator.translate(g, config.translation.target_language) for g in best_match.genres}
-            new_value = sorted(list(translated_genres))
-            if not config.processing.overwrite_existing and set(new_value) == set(metadata.genres or []):
-                return None
+            return f"- {self.field_name.title()}: Set to {new_value}"
         else:
-            new_value = []
-
-        payload[self.field_name] = new_value
-        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
-            payload[self.field_name + 'Lock'] = False
-        return f"- {self.field_name.title()}: Set to {new_value}" if self.operation == 'update' else f"- {self.field_name.title()}: Will be removed."
-
-@dataclass
-class StatusHandler(FieldHandler):
-    field_name = "status"
-
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
-        metadata = series.metadata
-
-        if self.operation == 'update':
-            if not best_match.status:
-                return None
-            new_value = ANILIST_STATUS_TO_KOMGA.get(best_match.status.upper())
-            if not new_value or (not config.processing.overwrite_existing and new_value == metadata.status):
-                return None
-        else:
-            new_value = None
-
-        payload[self.field_name] = new_value
-        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
-            payload[self.field_name + 'Lock'] = False
-        return f"- {self.field_name.title()}: Set to '{new_value}'" if self.operation == 'update' else f"- {self.field_name.title()}: Will be removed."
-
-@dataclass
-class TagsHandler(FieldHandler):
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
-        metadata = series.metadata
-
-        if self.operation == "remove":
-            if config.processing.remove_fields.tags.score:
-                new_tags = set(metadata.tags or [])
-                original_count = len(new_tags)
-                new_tags = {tag for tag in new_tags if "score:" not in tag.lower()}
-                if len(new_tags) < original_count:
-                    new_tags_list = sorted(list(new_tags))
-                    payload[self.field_name] = new_tags_list
-                    if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
-                        payload[self.field_name + 'Lock'] = False
-                    return "- Tags: removed score tag."
-                else:
-                    return "- Tags: processed (no score tag to remove)."
-            return None
-
-        # Update operation
-        new_tags = set(metadata.tags or [])  # Start with existing tags
-
-        changes = []
-
-        if config.processing.update_fields.tags.score and best_match and best_match.averageScore is not None and best_match.averageScore > 0:
-            score_tag = f"Score: {best_match.averageScore / 10:.1f}"
-            # Remove any existing score tags to avoid duplicates with different values (contains "score:")
-            new_tags = {tag for tag in new_tags if "score:" not in tag.lower()}
-            new_tags.add(score_tag)
-            changes.append(f"added score tag '{score_tag}'")
-
-        # Future: handle anilist_tags here
-
-        new_tags_list = sorted(list(new_tags))
-
-        # Check if changed
-        current_tags_set = set(metadata.tags or [])
-        if current_tags_set == set(new_tags_list):
-            return "- Tags: processed (no changes needed)."
-
-        payload[self.field_name] = new_tags_list
-        if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
-            payload[self.field_name + 'Lock'] = False
-        return f"- {self.field_name.title()}: {', '.join(changes)}" if changes else None
-
-@dataclass
-class LinksHandler(FieldHandler):
-    def _process_field(self, payload, series, best_match, config, translator, komga_client) -> Optional[str]:
-        metadata = series.metadata
-
-        if self.operation == "remove":
-            if config.processing.remove_fields.link:
-                new_links = getattr(metadata, self.field_name, [])
-                original_count = len(new_links)
-                provider_name = config.provider.name.upper()
-                new_links = [link for link in new_links if not link.get('label', '').upper().startswith(provider_name)]
-                if len(new_links) < original_count:
-                    payload[self.field_name] = new_links
-                    if getattr(metadata, self.field_name + '_lock') and config.processing.force_unlock:
-                        payload[self.field_name + 'Lock'] = False
-                    return "- Links: removed provider link."
-                else:
-                    return "- Links: processed (no provider link to remove)."
-            return None
-
-        # Update operation
-        if config.processing.update_fields.link and best_match:
-            new_links = getattr(metadata, self.field_name, [])
-            provider_label = config.provider.name.capitalize()
-
-            # Remove any existing provider links to avoid duplicates
-            new_links = [link for link in new_links if link.get('label') != provider_label]
-
-            # Always add the provider link
-            new_links.append({"label": provider_label, "url": f"https://anilist.co/manga/{best_match.id}"})
-
-            payload[self.field_name] = new_links
-            links_lock_attr = self.field_name + '_lock'
-            if hasattr(metadata, links_lock_attr) and getattr(metadata, links_lock_attr) and config.processing.force_unlock:
-                payload[self.field_name + 'Lock'] = False
-            return f"- {self.field_name.title()}: added provider link"
-
-        return None
+            return f"- {self.field_name.title()}: Will be removed."
 
 
 
@@ -230,18 +255,18 @@ class CoverImageHandler:
             success = komga_client.upload_series_poster(series.id, image_url) if komga_client else False
             return f"- Cover Image: {'Successfully updated' if success else 'Failed to update'} from {image_url}"
 
-# Global field handlers
+# Global field handlers - now using generic handler with configuration
 FIELD_HANDLERS = [
-    SummaryHandler("summary", "update", "summary"),
-    SummaryHandler("summary", "remove", "summary"),
-    GenresHandler("genres", "update", "genres"),
-    GenresHandler("genres", "remove", "genres"),
-    TagsHandler("tags", "update", "tags"),
-    TagsHandler("tags", "remove", "tags"),
-    LinksHandler("links", "update", "link"),
-    LinksHandler("links", "remove", "link"),
-    StatusHandler("status", "update", "status"),
-    StatusHandler("status", "remove", "status"),
+    GenericFieldHandler("summary", "update", "summary"),
+    GenericFieldHandler("summary", "remove", "summary"),
+    GenericFieldHandler("genres", "update", "genres"),
+    GenericFieldHandler("genres", "remove", "genres"),
+    GenericFieldHandler("tags", "update", "tags"),
+    GenericFieldHandler("tags", "remove", "tags"),
+    GenericFieldHandler("links", "update", "link"),
+    GenericFieldHandler("links", "remove", "link"),
+    GenericFieldHandler("status", "update", "status"),
+    GenericFieldHandler("status", "remove", "status"),
 ]
 
 

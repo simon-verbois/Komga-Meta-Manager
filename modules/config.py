@@ -85,30 +85,29 @@ class ProcessingConfig(BaseModel):
     @classmethod
     def enforce_remove_priority(cls, v):
         """Enforce that if remove_fields is true for a field, update_fields is automatically set to false."""
+        # Simple field mappings
+        simple_fields = ['summary', 'genres', 'status', 'cover_image', 'link']
+
+        for field in simple_fields:
+            remove_val = getattr(v.remove_fields, field, False)
+            update_val = getattr(v.update_fields, field, False)
+            if remove_val and update_val:
+                logger.warning(f"Config validation: 'remove_fields.{field}' is true, forcing 'update_fields.{field}' to false.")
+                setattr(v.update_fields, field, False)
+
+        # Handle nested author fields
         if v.remove_fields.authors.writers and v.update_fields.authors.writers:
             logger.warning("Config validation: 'remove_fields.authors.writers' is true, forcing 'update_fields.authors.writers' to false.")
             v.update_fields.authors.writers = False
+
         if v.remove_fields.authors.pencillers and v.update_fields.authors.pencillers:
             logger.warning("Config validation: 'remove_fields.authors.pencillers' is true, forcing 'update_fields.authors.pencillers' to false.")
             v.update_fields.authors.pencillers = False
-        if v.remove_fields.summary and v.update_fields.summary:
-            logger.warning("Config validation: 'remove_fields.summary' is true, forcing 'update_fields.summary' to false.")
-            v.update_fields.summary = False
-        if v.remove_fields.genres and v.update_fields.genres:
-            logger.warning("Config validation: 'remove_fields.genres' is true, forcing 'update_fields.genres' to false.")
-            v.update_fields.genres = False
-        if v.remove_fields.status and v.update_fields.status:
-            logger.warning("Config validation: 'remove_fields.status' is true, forcing 'update_fields.status' to false.")
-            v.update_fields.status = False
-        if v.remove_fields.cover_image and v.update_fields.cover_image:
-            logger.warning("Config validation: 'remove_fields.cover_image' is true, forcing 'update_fields.cover_image' to false.")
-            v.update_fields.cover_image = False
+
+        # Handle nested tags.score field
         if v.remove_fields.tags.score and v.update_fields.tags.score:
             logger.warning("Config validation: 'remove_fields.tags.score' is true, forcing 'update_fields.tags.score' to false.")
             v.update_fields.tags.score = False
-        if v.remove_fields.link and v.update_fields.link:
-            logger.warning("Config validation: 'remove_fields.link' is true, forcing 'update_fields.link' to false.")
-            v.update_fields.link = False
 
         return v
 
@@ -122,7 +121,7 @@ class TranslationConfig(BaseModel):
     """Pydantic model for translation settings."""
     enabled: bool = True
     provider: str = "google"
-    target_language: str = "en"
+    target_language: str = "EN-US"
     deepl: Optional[DeepLConfig] = None
 
 class AppConfig(BaseModel):

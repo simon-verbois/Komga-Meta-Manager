@@ -37,6 +37,9 @@ data:
       force_unlock: false    # Unlock locked fields before updating
       exclude_series:        # List of series titles to exclude from processing
         - "My Excluded Series"
+      # IMPORTANT: remove_fields takes PRIORITY over update_fields.
+      # If a field is set to true in remove_fields, it will be automatically disabled in update_fields.
+      # This prevents conflicting operations (you can't both update AND remove a field).
       update_fields:         # Fields to update if new data is found (set to true to enable)
         summary: true
         status: true
@@ -65,4 +68,4 @@ data:
       provider: "deepl"     # Translation service: 'google' or 'deepl'
       deepl:
         api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
-      target_language: "fr"  # ISO 639-1 code (e.g., 'fr', 'en', 'es')
+      target_language: "EN-US"  # Target language code. For DeepL: use 'EN-US' or 'EN-GB' (not just 'EN')

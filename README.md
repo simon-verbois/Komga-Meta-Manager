@@ -17,7 +17,7 @@ Automatically enriches Komga manga series metadata using AniList API, with optio
 - **Smart caching** to avoid re-processing and prevent data loss
 - **Scheduled processing** or on-demand execution
 - **Translation support** using Google Translate or DeepL
-- **Docker ready** for production deployment
+- **Docker and Kubernetes ready** for production deployment
 - **YAML configuration** for all settings
 
 ## Quick Start

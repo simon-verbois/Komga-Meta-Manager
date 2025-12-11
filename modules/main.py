@@ -6,14 +6,17 @@ import logging
 import os
 import platform
 import time
-import schedule
 import psutil
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 from modules.config import load_config, AppConfig
 from modules.processor import process_libraries, watch_for_new_series
 from modules.komga_client import KomgaClient
 from modules.providers import get_provider
 from modules.translators import get_translator
+from modules.scheduler import Scheduler
 from modules.utils import FrameFormatter, log_frame
 
 logger = logging.getLogger(__name__)
@@ -30,18 +33,21 @@ def display_header():
     # Platform
     platform_str = platform.platform()
 
-    # Memory
-    total_mem = int(psutil.virtual_memory().total / (1024**3))  # GB
-    avail_mem = int(psutil.virtual_memory().available / (1024**3))  # GB
+    # Memory and process info (optional)
+    try:
+        total_mem = int(psutil.virtual_memory().total / (1024**3))  # GB
+        avail_mem = int(psutil.virtual_memory().available / (1024**3))  # GB
 
-    # Process priority
-    nice = psutil.Process().nice()
-    if nice < 0:
-        prio_str = 'high'
-    elif nice > 0:
-        prio_str = 'low'
-    else:
-        prio_str = 'normal'
+        nice = psutil.Process().nice()
+        if nice < 0:
+            prio_str = 'high'
+        elif nice > 0:
+            prio_str = 'low'
+        else:
+            prio_str = 'normal'
+    except (ImportError, AttributeError):
+        total_mem = avail_mem = 0
+        prio_str = 'unknown'
 
     logging.info("|====================================================================================================|")
     logging.info("|                                                                                                    |")
@@ -87,20 +93,7 @@ def setup_logging(debug: bool = False):
     if not debug:
         logging.getLogger("gql").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.INFO)
-        logging.getLogger("schedule").setLevel(logging.INFO)
         logging.getLogger("deepl").setLevel(logging.WARNING)
-
-def get_next_run_time():
-    """
-    Safely gets the next run time from the schedule library.
-    """
-    try:
-        next_run_attr = schedule.next_run
-        if callable(next_run_attr):
-            return next_run_attr()
-        return next_run_attr
-    except Exception:
-        return None
 
 def run_job_and_save_cache(config: AppConfig):
     """
@@ -133,118 +126,188 @@ def initialize_watcher_series(komga_client: 'KomgaClient', target_libraries: dic
     logger.info("Watcher initialization complete.")
     return known_series
 
+def initialize_application() -> AppConfig:
+    """Initialize the application: load config, setup logging, display header."""
+    app_config = load_config()
+    setup_logging(app_config.system.debug)
+    display_header()
+    log_frame("Configuration loaded successfully.", 'left')
+    if app_config.system.dry_run:
+        logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
+    return app_config
+
+def run_once_mode(config: AppConfig):
+    """Execute the application in run-once mode."""
+    logging.info("Scheduler and watcher disabled. Running the job once.")
+    run_job_and_save_cache(config=config)
+    logging.info("|                                                                                                    |")
+    logging.info("|====================================================================================================|")
+    log_frame("Komga Meta Manager Finished", 'center')
+    logging.info("|====================================================================================================|")
+
+def initialize_scheduler(config: AppConfig) -> Optional[Scheduler]:
+    """Initialize the scheduler if enabled. Returns Scheduler instance or None."""
+    if not config.system.scheduler.enabled:
+        return None
+
+    run_time = config.system.scheduler.run_at
+    logging.info(f"Scheduler is enabled. Job will run every day at {run_time}.")
+
+    # Create the optimized scheduler
+    scheduler = Scheduler(config, run_job_and_save_cache)
+
+    # Calculate and log next run time
+    next_wait = scheduler.calculate_job_wait_seconds()
+    next_run_datetime = datetime.now() + timedelta(seconds=next_wait)
+    logging.info(f"Initial next scheduled run at: {next_run_datetime}")
+
+    return scheduler
+
+@dataclass
+class WatcherComponents:
+    """Container for watcher-related components."""
+    komga_client: Optional[KomgaClient] = None
+    metadata_provider: Optional[object] = None
+    translator: Optional[object] = None
+    known_series: Optional[dict] = None
+    target_libraries: Optional[dict] = None
+    last_poll_time: float = 0
+
+def initialize_watcher(config: AppConfig) -> WatcherComponents:
+    """Initialize the watcher if enabled. Returns WatcherComponents."""
+    components = WatcherComponents()
+
+    if not config.system.watcher.enabled:
+        return components
+
+    logging.info("Watcher is enabled. New series will be processed automatically.")
+
+    # Initialize components for watcher
+    cache_dir = Path("/config/cache")
+    cache_dir.mkdir(exist_ok=True)
+
+    components.metadata_provider = get_provider(config.provider, cache_dir)
+    if not components.metadata_provider:
+        logging.error("Failed to initialize provider for watcher. Watcher will be disabled.")
+        return components
+
+    # Initialize translator for watcher
+    if config.translation and config.translation.enabled:
+        translator_provider = config.translation.provider.lower()
+        translator_kwargs = {}
+        if translator_provider == 'deepl':
+            if config.translation.deepl:
+                translator_kwargs['config'] = config.translation.deepl
+            else:
+                logging.error("DeepL provider selected but config missing.")
+                translator_provider = None
+        if translator_provider:
+            components.translator = get_translator(translator_provider, **translator_kwargs)
+            if components.translator:
+                logger.info("Watcher translation initialized.")
+            else:
+                logger.error("Failed to initialize translator for watcher.")
+
+    # Initialize Komga client and libraries
+    components.komga_client = KomgaClient(config.komga)
+    all_libraries = components.komga_client.get_libraries()
+    if not all_libraries:
+        logging.error("Could not retrieve libraries from Komga for watcher initialization. Aborting watcher.")
+        return WatcherComponents()  # Return empty components
+
+    components.target_libraries = {lib.name: lib.id for lib in all_libraries if lib.name in config.komga.libraries}
+    if not components.target_libraries:
+        logging.warning("No matching libraries found for watcher. Watcher will be disabled.")
+        return WatcherComponents()  # Return empty components
+
+    # Initialize known series
+    components.known_series = initialize_watcher_series(components.komga_client, components.target_libraries)
+    logging.info(f"Next watcher poll in {config.system.watcher.polling_interval_minutes} minutes.")
+
+    # Perform immediate first check
+    logger.info("Watcher: Performing initial series check...")
+    has_processed = watch_for_new_series(
+        config, components.komga_client, components.target_libraries,
+        components.known_series, components.metadata_provider, components.translator
+    )
+    components.last_poll_time = time.time()  # Set after first check
+
+    if has_processed:
+        logging.info("|                                                                                                    |")
+        logging.info("|====================================================================================================|")
+        log_frame("Watcher", 'center')
+        logging.info("|====================================================================================================|")
+        logger.info(f"Watcher: Monitoring resumed, next check in {config.system.watcher.polling_interval_minutes} minutes.")
+
+    return components
+
+def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponents) -> bool:
+    """Wrapper function for watcher polling that returns whether processing occurred."""
+    if not watcher_components.known_series:
+        return False
+
+    logger.debug("Watcher: Checking for new series...")
+    has_processed = watch_for_new_series(
+        config, watcher_components.komga_client,
+        watcher_components.target_libraries, watcher_components.known_series,
+        watcher_components.metadata_provider, watcher_components.translator
+    )
+
+    if has_processed:
+        logging.info("|                                                                                                    |")
+        logging.info("|====================================================================================================|")
+        log_frame("Watcher", 'center')
+        logging.info("|====================================================================================================|")
+        logger.info(f"Watcher: Monitoring resumed, next check in {config.system.watcher.polling_interval_minutes} minutes.")
+
+    return has_processed
+
+def run_continuous_loop(config: AppConfig, scheduler: Optional[Scheduler], watcher_components: WatcherComponents):
+    """Run the main continuous loop for scheduler and/or watcher."""
+    try:
+        if scheduler:
+            # Use the optimized scheduler that handles both scheduler and watcher
+            watcher_func = None
+            if config.system.watcher.enabled and watcher_components.known_series:
+                watcher_func = lambda: watcher_poll_function(config, watcher_components)
+
+            scheduler.run(watcher_func)
+        else:
+            # Fallback: only watcher enabled, no scheduler
+            logger.info("Only watcher enabled, running in legacy mode.")
+            while True:
+                if (config.system.watcher.enabled and
+                    watcher_components.known_series is not None):
+
+                    current_time = time.time()
+                    poll_interval = config.system.watcher.polling_interval_minutes * 60
+                    if current_time - watcher_components.last_poll_time >= poll_interval:
+                        watcher_poll_function(config, watcher_components)
+                        watcher_components.last_poll_time = current_time
+
+                time.sleep(60)  # Check every minute
+
+    except KeyboardInterrupt:
+        logging.info("Shutdown signal received. Exiting gracefully.")
+
 def main():
     """Main function to run the Manga Manager."""
     try:
-        app_config = load_config()
-        setup_logging(app_config.system.debug)
-        display_header()
-        log_frame("Configuration loaded successfully.", 'left')
-        if app_config.system.dry_run:
-            logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
+        app_config = initialize_application()
 
         # Determine if we need continuous running (scheduler or watcher)
         continuous_mode = app_config.system.scheduler.enabled or app_config.system.watcher.enabled
 
         if not continuous_mode:
-            # "Run once" mode
-            logging.info("Scheduler and watcher disabled. Running the job once.")
-            run_job_and_save_cache(config=app_config)
-            logging.info("|                                                                                                    |")
-            logging.info("|====================================================================================================|")
-            log_frame("Komga Meta Manager Finished", 'center')
-            logging.info("|====================================================================================================|")
+            run_once_mode(app_config)
             return
 
-        # Continuous mode: setup scheduler and/or watcher
-        komga_client = None
-        metadata_provider = None
-        translator = None
-        known_series = None
-        target_libraries = None
-        last_poll_time = 0
+        # Continuous mode: setup scheduler and watcher
+        scheduler = initialize_scheduler(app_config)
+        watcher_components = initialize_watcher(app_config)
 
-        if app_config.system.scheduler.enabled:
-            run_time = app_config.system.scheduler.run_at
-            logging.info(f"Scheduler is enabled. Job will run every day at {run_time}.")
-            schedule.every().day.at(run_time).do(run_job_and_save_cache, config=app_config)
-            next_run = get_next_run_time()
-            if next_run:
-                 logging.info(f"Initial next scheduled run at: {next_run}")
-
-        if app_config.system.watcher.enabled:
-            logging.info("Watcher is enabled. New series will be processed automatically.")
-            # Initialize components for watcher (only once)
-            cache_dir = Path("/config/cache")
-            cache_dir.mkdir(exist_ok=True)
-
-            metadata_provider = get_provider(app_config.provider, cache_dir)
-            if not metadata_provider:
-                logging.error("Failed to initialize provider for watcher. Watcher will be disabled.")
-            else:
-                if app_config.translation and app_config.translation.enabled:
-                    translator_provider = app_config.translation.provider.lower()
-                    translator_kwargs = {}
-                    if translator_provider == 'deepl':
-                        if app_config.translation.deepl:
-                            translator_kwargs['config'] = app_config.translation.deepl
-                        else:
-                            logging.error("DeepL provider selected but config missing.")
-                            translator_provider = None
-                    if translator_provider:
-                        translator = get_translator(translator_provider, **translator_kwargs)
-                        if translator:
-                            logger.info("Watcher translation initialized.")
-                        else:
-                            logger.error("Failed to initialize translator for watcher.")
-
-                komga_client = KomgaClient(app_config.komga)
-                # Get target libraries for watcher initialization
-                all_libraries = komga_client.get_libraries()
-                if not all_libraries:
-                    logging.error("Could not retrieve libraries from Komga for watcher initialization. Aborting watcher.")
-                    return
-                target_libraries = {lib.name: lib.id for lib in all_libraries if lib.name in app_config.komga.libraries}
-                if not target_libraries:
-                    logging.warning("No matching libraries found for watcher. Watcher will be disabled.")
-                else:
-                    known_series = initialize_watcher_series(komga_client, target_libraries)
-                    logging.info(f"Next watcher poll in {app_config.system.watcher.polling_interval_minutes} minutes.")
-
-                    # Perform immediate first check to catch any series added during initialization
-                    logger.info("Watcher: Performing initial series check...")
-                    has_processed = watch_for_new_series(app_config, komga_client, target_libraries, known_series, metadata_provider, translator)
-                    last_poll_time = time.time()  # Set after first check
-                    if has_processed:
-                        logging.info("|                                                                                                    |")
-                        logging.info("|====================================================================================================|")
-                        log_frame("Watcher", 'center')
-                        logging.info("|====================================================================================================|")
-                        logger.info(f"Watcher: Monitoring resumed, next check in {app_config.system.watcher.polling_interval_minutes} minutes.")
-
-        # Main continuous loop
-        try:
-            while True:
-                schedule.run_pending()
-
-                # Check for watcher polling
-                if app_config.system.watcher.enabled and known_series is not None:
-                    current_time = time.time()
-                    poll_interval = app_config.system.watcher.polling_interval_minutes * 60
-                    if current_time - last_poll_time >= poll_interval:
-                        logger.debug("Watcher: Checking for new series...")
-                        has_processed = watch_for_new_series(app_config, komga_client, target_libraries, known_series, metadata_provider, translator)
-                        last_poll_time = current_time
-                        if has_processed:
-                            logging.info("|                                                                                                    |")
-                            logging.info("|====================================================================================================|")
-                            log_frame("Watcher", 'center')
-                            logging.info("|====================================================================================================|")
-                            logger.info(f"Watcher: Monitoring resumed, next check in {app_config.system.watcher.polling_interval_minutes} minutes.")
-
-                time.sleep(60)  # Check every minute
-        except KeyboardInterrupt:
-            logging.info("Shutdown signal received. Exiting gracefully.")
+        # Run the continuous loop
+        run_continuous_loop(app_config, scheduler, watcher_components)
 
     except Exception as e:
         logging.error(f"A critical error occurred during setup: {e}", exc_info=True)
