@@ -43,7 +43,7 @@ jobs:
 
   release:
     needs: quality
-    if: startsWith(gitea.ref, 'refs/tags/')
+    if: startsWith(forge.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     steps:
@@ -54,7 +54,7 @@ jobs:
 
       - name: Verify release version
         env:
-          RELEASE_TAG: ${{ gitea.ref_name }}
+          RELEASE_TAG: ${{ forge.ref_name }}
         run: |
           APP_VERSION="$(tr -d '\r\n' < VERSION)"
 
@@ -72,8 +72,8 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.version=${{ gitea.ref_name }}
-            org.opencontainers.image.revision=${{ gitea.sha }}
+            org.opencontainers.image.version=${{ forge.ref_name }}
+            org.opencontainers.image.revision=${{ forge.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -88,8 +88,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ vars.GITHUBPAT_TOKEN }}
         run: |
-          git config --global user.name "Gitea CI"
-          git config --global user.email "ci@gitea.local"
+          git config --global user.name "Forgejo CI"
+          git config --global user.email "ci@forgejo.local"
           git remote add github \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/simon-verbois/Komga-Meta-Manager.git"
           git push --force github HEAD:main --tags
