@@ -64,7 +64,6 @@ class FrameFormatter(logging.Formatter):
         elif msg.startswith('|') and msg.endswith('|'):
             # already formatted frame line
             content = None
-            msg_part = msg
         else:
             content = msg
             align = 'left'

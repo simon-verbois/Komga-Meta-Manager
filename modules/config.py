@@ -2,8 +2,8 @@
 """
 Handles loading and validation of the application's configuration file.
 """
-import re
 import logging
+import os
 from typing import List, Optional
 import yaml
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
@@ -21,14 +21,18 @@ class SchedulerConfig(BaseModel):
     @classmethod
     def validate_run_at_format(cls, v: str) -> str:
         """Validate that run_at is in HH:MM format."""
-        if not re.match(r'^[0-2]\d:[0-5]\d$', v):
-            raise ValueError('run_at must be in HH:MM format')
+        try:
+            hour, minute = (int(part) for part in v.split(':'))
+        except (AttributeError, TypeError, ValueError):
+            raise ValueError('run_at must be in HH:MM format') from None
+        if len(v) != 5 or v[2] != ':' or not 0 <= hour <= 23 or not 0 <= minute <= 59:
+            raise ValueError('run_at must be a valid time in HH:MM format')
         return v
 
 class WatcherConfig(BaseModel):
     """Pydantic model for watcher settings."""
     enabled: bool = False
-    polling_interval_minutes: int = 5
+    polling_interval_minutes: int = Field(default=5, gt=0)
 
 class SystemConfig(BaseModel):
     """Pydantic model for system settings."""
@@ -46,13 +50,21 @@ class KomgaConfig(BaseModel):
 
 class CacheConfig(BaseModel):
     """Pydantic model for cache settings."""
-    ttl_hours: int = 168  # Default to 7 days
+    ttl_hours: int = Field(default=168, gt=0)  # Default to 7 days
 
 class ProviderConfig(BaseModel):
     """Pydantic model for metadata provider settings."""
     name: str = "anilist"
-    min_score: int = 80
+    min_score: int = Field(default=80, ge=0, le=100)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+
+    @field_validator('name')
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        provider = value.strip().lower()
+        if provider != 'anilist':
+            raise ValueError("provider.name must be 'anilist'")
+        return provider
 
 class AuthorsConfig(BaseModel):
     """Pydantic model for granular author configuration."""
@@ -62,6 +74,23 @@ class AuthorsConfig(BaseModel):
 class TagsConfig(BaseModel):
     """Pydantic model for tags configuration."""
     score: bool = False
+
+
+class RemoveAuthorsConfig(BaseModel):
+    """Author removal flags. Removals must always be opt-in."""
+    writers: bool = False
+    pencillers: bool = False
+
+
+class RemoveFlags(BaseModel):
+    """Metadata removal flags with safe, non-destructive defaults."""
+    summary: bool = False
+    genres: bool = False
+    status: bool = False
+    authors: RemoveAuthorsConfig = Field(default_factory=RemoveAuthorsConfig)
+    cover_image: bool = False
+    tags: TagsConfig = Field(default_factory=TagsConfig)
+    link: bool = False
 
 class UpdateFlags(BaseModel):
     """Pydantic model for granular update control."""
@@ -79,37 +108,36 @@ class ProcessingConfig(BaseModel):
     force_unlock: bool = False
     exclude_series: List[str] = Field(default_factory=list)
     update_fields: UpdateFlags = Field(default_factory=UpdateFlags)
-    remove_fields: UpdateFlags = Field(default_factory=UpdateFlags)
+    remove_fields: RemoveFlags = Field(default_factory=RemoveFlags)
 
     @model_validator(mode='after')
-    @classmethod
-    def enforce_remove_priority(cls, v):
+    def enforce_remove_priority(self):
         """Enforce that if remove_fields is true for a field, update_fields is automatically set to false."""
         # Simple field mappings
         simple_fields = ['summary', 'genres', 'status', 'cover_image', 'link']
 
         for field in simple_fields:
-            remove_val = getattr(v.remove_fields, field, False)
-            update_val = getattr(v.update_fields, field, False)
+            remove_val = getattr(self.remove_fields, field, False)
+            update_val = getattr(self.update_fields, field, False)
             if remove_val and update_val:
                 logger.warning(f"Config validation: 'remove_fields.{field}' is true, forcing 'update_fields.{field}' to false.")
-                setattr(v.update_fields, field, False)
+                setattr(self.update_fields, field, False)
 
         # Handle nested author fields
-        if v.remove_fields.authors.writers and v.update_fields.authors.writers:
+        if self.remove_fields.authors.writers and self.update_fields.authors.writers:
             logger.warning("Config validation: 'remove_fields.authors.writers' is true, forcing 'update_fields.authors.writers' to false.")
-            v.update_fields.authors.writers = False
+            self.update_fields.authors.writers = False
 
-        if v.remove_fields.authors.pencillers and v.update_fields.authors.pencillers:
+        if self.remove_fields.authors.pencillers and self.update_fields.authors.pencillers:
             logger.warning("Config validation: 'remove_fields.authors.pencillers' is true, forcing 'update_fields.authors.pencillers' to false.")
-            v.update_fields.authors.pencillers = False
+            self.update_fields.authors.pencillers = False
 
         # Handle nested tags.score field
-        if v.remove_fields.tags.score and v.update_fields.tags.score:
+        if self.remove_fields.tags.score and self.update_fields.tags.score:
             logger.warning("Config validation: 'remove_fields.tags.score' is true, forcing 'update_fields.tags.score' to false.")
-            v.update_fields.tags.score = False
+            self.update_fields.tags.score = False
 
-        return v
+        return self
 
 class DeepLConfig(BaseModel):
     """Pydantic model for DeepL specific settings."""
@@ -123,6 +151,26 @@ class TranslationConfig(BaseModel):
     provider: str = "google"
     target_language: str = "EN-US"
     deepl: Optional[DeepLConfig] = None
+
+    @model_validator(mode='after')
+    def validate_and_normalize(self):
+        self.provider = self.provider.strip().lower()
+        if self.provider not in {'google', 'deepl'}:
+            raise ValueError("translation.provider must be 'google' or 'deepl'")
+        if self.enabled and self.provider == 'deepl' and self.deepl is None:
+            raise ValueError('translation.deepl.api_key is required when DeepL is enabled')
+
+        language = self.target_language.strip().replace('_', '-')
+        if not language:
+            raise ValueError('translation.target_language must not be empty')
+        if self.provider == 'google':
+            language = language.lower()
+            if language in {'en-us', 'en-gb'}:
+                language = 'en'
+        else:
+            language = language.upper()
+        self.target_language = language
+        return self
 
 class AppConfig(BaseModel):
     """Root Pydantic model for the application configuration."""
@@ -149,5 +197,21 @@ def load_config(path: str = CONFIG_PATH) -> AppConfig:
     """
     with open(path, "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f)
+
+    if not isinstance(config_data, dict):
+        raise ValueError('Configuration root must be a YAML mapping')
+
+    # Environment variables are the preferred way to inject secrets in
+    # container orchestrators. They intentionally take precedence over YAML.
+    komga_api_key = os.getenv('KMM_KOMGA_API_KEY')
+    if komga_api_key:
+        config_data.setdefault('komga', {})['api_key'] = komga_api_key
+
+    deepl_api_key = os.getenv('KMM_DEEPL_API_KEY')
+    if deepl_api_key:
+        translation = config_data.setdefault('translation', {})
+        if not isinstance(translation.get('deepl'), dict):
+            translation['deepl'] = {}
+        translation['deepl']['api_key'] = deepl_api_key
 
     return AppConfig(**config_data)

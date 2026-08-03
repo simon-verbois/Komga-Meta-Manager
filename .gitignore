@@ -23,6 +23,10 @@ wheels/
 # Config files
 config.yml
 translations.yml
+k8s-manifest/04-secret.yaml
 
 # Cache directories
 /config/cache/
+.coverage
+.pytest_cache/
+.ruff_cache/

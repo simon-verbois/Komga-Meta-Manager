@@ -4,6 +4,8 @@ Optimized scheduler for Komga-Meta-Manager that calculates precise wait times
 and sleeps exactly until the next execution, eliminating unnecessary polling.
 """
 import logging
+import math
+import threading
 import time
 from datetime import datetime, date, timedelta
 from typing import Callable, Optional, Any
@@ -59,7 +61,7 @@ class Scheduler:
         if not self.watcher_enabled:
             return False
 
-        current_time = time.time()
+        current_time = time.monotonic()
         return current_time - self.state.last_watcher_poll >= self.watcher_interval_seconds
 
     def calculate_job_wait_seconds(self) -> int:
@@ -69,12 +71,12 @@ class Scheduler:
 
         if now < start_time_today:
             # Wait until start time today
-            wait_seconds = int((start_time_today - now).total_seconds())
+            wait_seconds = math.ceil((start_time_today - now).total_seconds())
         else:
             # Start time has passed today, wait until tomorrow
             tomorrow = now + timedelta(days=1)
             start_time_tomorrow = tomorrow.replace(hour=self.start_hour, minute=self.start_minute, second=0, microsecond=0)
-            wait_seconds = int((start_time_tomorrow - now).total_seconds())
+            wait_seconds = math.ceil((start_time_tomorrow - now).total_seconds())
 
         return wait_seconds
 
@@ -83,12 +85,12 @@ class Scheduler:
         if not self.watcher_enabled:
             return None
 
-        current_time = time.time()
+        current_time = time.monotonic()
         time_since_last_poll = current_time - self.state.last_watcher_poll
         if time_since_last_poll >= self.watcher_interval_seconds:
             return 0  # Poll immediately
 
-        wait_seconds = int(self.watcher_interval_seconds - time_since_last_poll)
+        wait_seconds = math.ceil(self.watcher_interval_seconds - time_since_last_poll)
         return wait_seconds
 
     def calculate_next_wait_seconds(self) -> tuple[int, bool, bool]:
@@ -114,7 +116,12 @@ class Scheduler:
     def run_job(self) -> None:
         """Execute the scheduled job."""
         try:
-            self.job_function(self.config)
+            result = self.job_function(self.config)
+            if hasattr(result, 'success') and not result.success:
+                logger.error(
+                    "Scheduled job completed with %s failed series.",
+                    getattr(result, 'failed', 'unknown'),
+                )
         except Exception as e:
             logger.error(f"An error occurred during scheduled job execution: {e}", exc_info=True)
 
@@ -122,25 +129,35 @@ class Scheduler:
         """Execute the watcher poll."""
         try:
             has_processed = watcher_function()
-            self.state.last_watcher_poll = time.time()
-
             if has_processed:
                 logger.info(f"Watcher: Monitoring resumed, next check in {self.config.system.watcher.polling_interval_minutes} minutes.")
         except Exception as e:
             logger.error(f"An error occurred during watcher poll: {e}", exc_info=True)
+        finally:
+            # Always defer the next attempt; an outage must not cause a busy loop.
+            self.state.last_watcher_poll = time.monotonic()
 
-    def run(self, watcher_function: Optional[Callable[[], bool]] = None) -> None:
+    def run(
+        self,
+        watcher_function: Optional[Callable[[], bool]] = None,
+        stop_event: Optional[threading.Event] = None,
+    ) -> None:
         """Main processing loop - waits precisely until next execution time."""
+        stop_event = stop_event or threading.Event()
+        if self.watcher_enabled and watcher_function is None:
+            logger.warning("Watcher was configured but did not initialize; continuing with scheduler only.")
+            self.watcher_enabled = False
+
         logger.info("Starting optimized scheduler...")
         logger.debug(f"Scheduler configuration: run_at={self.start_hour}:{self.start_minute:02d}, "
                     f"watcher_enabled={self.watcher_enabled}")
 
         # Initialize watcher poll time if enabled
         if self.watcher_enabled:
-            self.state.last_watcher_poll = time.time()
+            self.state.last_watcher_poll = time.monotonic()
             logger.info(f"Watcher: Initial poll completed, next check in {self.config.system.watcher.polling_interval_minutes} minutes.")
 
-        while True:
+        while not stop_event.is_set():
             # Calculate what to do next
             wait_seconds, should_run_job, should_poll_watcher = self.calculate_next_wait_seconds()
 
@@ -150,7 +167,8 @@ class Scheduler:
                                f"({wait_seconds} seconds)...")
                 elif should_poll_watcher:
                     logger.info(f"Waiting for watcher poll ({wait_seconds} seconds)...")
-                time.sleep(wait_seconds)
+                if stop_event.wait(wait_seconds):
+                    break
 
             # Execute scheduled job if it's time
             if should_run_job and self.should_run_job_now():

@@ -4,7 +4,6 @@ Circuit Breaker implementation for resilient API calls.
 """
 import time
 import logging
-from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 import threading

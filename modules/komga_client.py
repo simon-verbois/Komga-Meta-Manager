@@ -19,11 +19,21 @@ from modules.constants import (
     HTTP_TIMEOUTS,
     MAX_RETRIES,
     RETRY_BACKOFF_FACTOR,
-    KOMGA_SERIES_PAGE_SIZE
+    KOMGA_SERIES_PAGE_SIZE,
+    MAX_COVER_IMAGE_BYTES,
+    MAX_COVER_IMAGE_PIXELS,
 )
 from modules.circuit_breaker import create_circuit_breaker_config, CircuitBreakerException, circuit_breaker_factory
 
 logger = logging.getLogger(__name__)
+
+
+class KomgaAPIError(RuntimeError):
+    """Raised when a Komga request cannot be completed."""
+
+
+class CoverImageError(RuntimeError):
+    """Raised when a remote cover cannot be safely downloaded or uploaded."""
 
 class KomgaClient:
     """
@@ -81,8 +91,8 @@ class KomgaClient:
         if isinstance(exception, RequestException):
             response = getattr(exception, 'response', None)
             if response is not None:
-                # Retry on server errors (500-599)
-                return 500 <= response.status_code < 600
+                # Retry server errors and rate limiting.
+                return response.status_code == 429 or 500 <= response.status_code < 600
         
         return False
 
@@ -111,15 +121,16 @@ class KomgaClient:
             {}
         """
         url = f"{self.base_url}{KOMGA_API_V1_PATH}/{endpoint}"
-        last_exception = None
-
         # Wrap the entire request logic in circuit breaker if available
         if self.circuit_breaker:
             try:
                 return self.circuit_breaker.call(self._make_request_with_retry, method, url, params, json_data)
-            except Exception as e:
+            except CircuitBreakerException as e:
+                logger.error(f"Circuit breaker blocked request to {url}: {e}")
+                raise KomgaAPIError(str(e)) from e
+            except RequestException as e:
                 logger.error(f"Circuit breaker blocked or failed request to {url}: {e}")
-                return None
+                raise KomgaAPIError(f"Request to Komga failed: {e}") from e
 
         # Fallback to direct call without circuit breaker protection
         return self._make_request_with_retry(method, url, params, json_data)
@@ -127,6 +138,7 @@ class KomgaClient:
     def _make_request_with_retry(self, method: str, url: str, params: Optional[dict] = None, json_data: Optional[dict] = None) -> Optional[dict | List]:
         """Internal method that performs the actual HTTP request with retries."""
 
+        last_exception: Optional[RequestException] = None
         for attempt in range(MAX_RETRIES):
             try:
                 logger.debug(f"Request attempt {attempt + 1}/{MAX_RETRIES}: {method} {url}")
@@ -145,7 +157,7 @@ class KomgaClient:
                 # Success - return parsed JSON or empty dict
                 return response.json() if response.content else {}
 
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 logger.debug("API responded with success but no JSON body.")
                 return {}
 
@@ -179,8 +191,10 @@ class KomgaClient:
                         f"Request failed after {MAX_RETRIES} attempts for {url}: {e}"
                     )
         
-        # All retries exhausted
-        return None
+        # Retryable failures must escape so the circuit breaker can record them.
+        if last_exception is not None:
+            raise last_exception
+        raise KomgaAPIError(f"Request to {url} failed without a response")
 
 
     def get_libraries(self) -> List[KomgaLibrary]:
@@ -206,8 +220,7 @@ class KomgaClient:
             logger.info(f"Successfully retrieved {len(response_data)} libraries")
             return [KomgaLibrary(**lib) for lib in response_data]
 
-        logger.error("Failed to retrieve libraries from Komga")
-        return []
+        raise KomgaAPIError("Komga returned an invalid libraries response")
 
     def get_series_in_library(self, library_id: str, library_name: str) -> List[KomgaSeries]:
         """
@@ -240,10 +253,8 @@ class KomgaClient:
             }
             response_data = self._make_request("GET", "series", params=params)
 
-            if not response_data or not isinstance(response_data, dict):
-                if page == 0:
-                    logger.error(f"Failed to fetch series from library '{library_name}'")
-                break
+            if response_data is None or not isinstance(response_data, dict):
+                raise KomgaAPIError(f"Failed to fetch series from library '{library_name}'")
 
             content = response_data.get("content", [])
             if not content:
@@ -288,8 +299,7 @@ class KomgaClient:
             logger.debug(f"Successfully updated metadata for series {series_id}")
             return True
         
-        logger.error(f"Failed to update metadata for series {series_id}")
-        return False
+        raise KomgaAPIError(f"Failed to update metadata for series {series_id}")
 
     def get_books_in_series(self, series_id: str, series_name: str) -> List[KomgaBook]:
         """
@@ -320,10 +330,8 @@ class KomgaClient:
             }
             response_data = self._make_request("GET", f"series/{series_id}/books", params=params)
 
-            if not response_data or not isinstance(response_data, dict):
-                if page == 0:
-                    logger.error(f"Failed to fetch books from series '{series_name}'")
-                break
+            if response_data is None or not isinstance(response_data, dict):
+                raise KomgaAPIError(f"Failed to fetch books from series '{series_name}'")
 
             content = response_data.get("content", [])
             if not content:
@@ -367,8 +375,7 @@ class KomgaClient:
             logger.debug(f"Successfully updated metadata for book {book_id}")
             return True
 
-        logger.error(f"Failed to update metadata for book {book_id}")
-        return False
+        raise KomgaAPIError(f"Failed to update metadata for book {book_id}")
 
     def get_series_thumbnails(self, series_id: str) -> List[KomgaThumbnail]:
         """
@@ -392,8 +399,7 @@ class KomgaClient:
             logger.debug(f"Successfully retrieved {len(response_data)} thumbnails for series {series_id}")
             return [KomgaThumbnail(**thumb) for thumb in response_data]
 
-        logger.debug(f"No thumbnails found or failed to retrieve thumbnails for series {series_id}")
-        return []
+        raise KomgaAPIError(f"Komga returned an invalid thumbnails response for series {series_id}")
 
 
 
@@ -421,8 +427,7 @@ class KomgaClient:
             logger.debug(f"Successfully deleted thumbnail {thumbnail_id} for series {series_id}")
             return True
 
-        logger.error(f"Failed to delete thumbnail {thumbnail_id} for series {series_id}")
-        return False
+        raise KomgaAPIError(f"Failed to delete thumbnail {thumbnail_id} for series {series_id}")
 
     def clean_duplicate_thumbnails(self, series_id: str) -> int:
         """
@@ -454,7 +459,6 @@ class KomgaClient:
             if len(thumbs) > 1:
                 # Sort by ID ascending, keep the first, delete the rest
                 thumbs_sorted = sorted(thumbs, key=lambda t: t.id)
-                keep = thumbs_sorted[0]
                 to_delete = thumbs_sorted[1:]
                 for thumb in to_delete:
                     if self.delete_series_thumbnail(series_id, thumb.id):
@@ -480,8 +484,9 @@ class KomgaClient:
         """
         try:
             file_size = len(image_content)
-            image = Image.open(io.BytesIO(image_content))
-            width, height = image.size
+            with Image.open(io.BytesIO(image_content)) as image:
+                width, height = image.size
+                image.verify()
             return file_size, width, height
         except Exception as e:
             logger.error(f"Failed to get image metadata: {e}")
@@ -505,79 +510,142 @@ class KomgaClient:
                 return True
         return False
 
+    def _download_cover_image(self, image_url: str) -> Tuple[bytes, str, Tuple[int, int, int]]:
+        """Download and validate an external cover without leaking Komga TLS settings."""
+        try:
+            response = self.session.get(
+                image_url,
+                stream=True,
+                verify=True,
+                timeout=HTTP_TIMEOUTS,
+            )
+            response.raise_for_status()
+
+            try:
+                declared_size = int(response.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                declared_size = 0
+            if declared_size > MAX_COVER_IMAGE_BYTES:
+                raise CoverImageError(
+                    f"Cover is larger than {MAX_COVER_IMAGE_BYTES // (1024 * 1024)} MiB"
+                )
+
+            chunks = []
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+                if downloaded > MAX_COVER_IMAGE_BYTES:
+                    raise CoverImageError(
+                        f"Cover is larger than {MAX_COVER_IMAGE_BYTES // (1024 * 1024)} MiB"
+                    )
+                chunks.append(chunk)
+            image_content = b''.join(chunks)
+        except CoverImageError:
+            raise
+        except RequestException as e:
+            raise CoverImageError(f"Failed to download cover from {image_url}: {e}") from e
+        finally:
+            if 'response' in locals():
+                response.close()
+
+        try:
+            with Image.open(io.BytesIO(image_content)) as image:
+                image_format = image.format
+                width, height = image.size
+                if width * height > MAX_COVER_IMAGE_PIXELS:
+                    raise CoverImageError(
+                        f"Cover contains more than {MAX_COVER_IMAGE_PIXELS:,} pixels"
+                    )
+                image.verify()
+        except Exception as e:
+            raise CoverImageError(f"Downloaded cover is not a valid image: {e}") from e
+
+        media_type = Image.MIME.get(image_format or '', '')
+        if not media_type.startswith('image/'):
+            raise CoverImageError(f"Unsupported cover image format: {image_format or 'unknown'}")
+        return image_content, media_type, (len(image_content), width, height)
+
+    def update_series_poster(
+        self,
+        series_id: str,
+        image_url: str,
+        overwrite_existing: bool = False,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Idempotently update a series poster.
+
+        Returns one of: ``preserved``, ``unchanged``, ``would_upload``, or
+        ``uploaded``. Existing user uploads are never deleted by this method.
+        """
+        thumbnails = self.get_series_thumbnails(series_id)
+        user_uploads = [thumb for thumb in thumbnails if thumb.type.upper() == 'USER_UPLOADED']
+
+        if user_uploads and not overwrite_existing:
+            return 'preserved'
+
+        image_content, media_type, metadata = self._download_cover_image(image_url)
+        if self.thumbnail_exists(user_uploads, *metadata):
+            return 'unchanged'
+        if dry_run:
+            return 'would_upload'
+
+        files = {'file': (f"{series_id}_poster", image_content, media_type)}
+        url = f"{self.base_url}{KOMGA_API_V1_PATH}/series/{series_id}/thumbnails"
+        try:
+            api_response = self.session.post(
+                url,
+                headers=self.headers,
+                files=files,
+                verify=self.verify_ssl,
+                timeout=HTTP_TIMEOUTS,
+            )
+            api_response.raise_for_status()
+        except RequestException as e:
+            raise CoverImageError(f"Failed to upload poster for series {series_id}: {e}") from e
+
+        logger.info(f"Successfully uploaded a new poster for series {series_id} from {image_url}")
+        return 'uploaded'
+
+    def remove_uploaded_series_posters(self, series_id: str, dry_run: bool = False) -> int:
+        """Remove only explicitly user-uploaded series thumbnails."""
+        thumbnails = self.get_series_thumbnails(series_id)
+        uploaded = [thumb for thumb in thumbnails if thumb.type.upper() == 'USER_UPLOADED']
+        if dry_run:
+            return len(uploaded)
+
+        deleted_count = 0
+        for thumbnail in uploaded:
+            if self.delete_series_thumbnail(series_id, thumbnail.id):
+                deleted_count += 1
+        return deleted_count
+
     def upload_series_poster(self, series_id: str, image_url: str) -> bool:
         """
-        Download an image from a URL and upload/force it as the series poster.
-        Always upload the new image and clean old thumbnails to keep only the new one.
+        Backward-compatible wrapper that safely uploads a series poster.
+        Existing thumbnails are preserved.
 
         Args:
             series_id: The ID of the series to update
             image_url: The URL of the image to download and upload
 
         Returns:
-            True if upload and cleanup succeeded, False on failure
+            True if upload succeeded or the same image already exists.
 
         Examples:
             >>> client.upload_series_poster("series123", "https://example.com/cover.jpg")
             True
         """
         try:
-            # Download image with timeout
-            image_response = self.session.get(
+            status = self.update_series_poster(
+                series_id,
                 image_url,
-                stream=True,
-                verify=self.verify_ssl,
-                timeout=HTTP_TIMEOUTS
+                overwrite_existing=True,
+                dry_run=False,
             )
-            image_response.raise_for_status()
-            image_content = image_response.content
-
-            # Prepare file for upload
-            files = {'file': (f"{series_id}_poster", image_content, 'image/jpeg')}
-            url = f"{self.base_url}{KOMGA_API_V1_PATH}/series/{series_id}/thumbnails"
-
-            # Upload to Komga with timeout
-            api_response = self.session.post(
-                url,
-                headers=self.headers,
-                files=files,
-                verify=self.verify_ssl,
-                timeout=HTTP_TIMEOUTS
-            )
-            api_response.raise_for_status()
-
-            # Get the created thumbnail from response
-            try:
-                created_thumb = api_response.json()
-                if isinstance(created_thumb, dict) and 'id' in created_thumb:
-                    thumb_id = created_thumb['id']
-                    # Clean all other thumbnails
-                    cleaned_count = self._clean_other_thumbnails(series_id, keep_thumb_id=thumb_id)
-                    if cleaned_count > 0:
-                        logger.info(f"Cleaned {cleaned_count} old thumbnails, kept new {thumb_id}")
-                else:
-                    logger.warning(f"Could not get uploaded thumbnail ID for series {series_id}")
-            except Exception as e:
-                logger.warning(f"Failed to parse upload response for series {series_id}: {e}")
-
-            logger.info(f"Successfully uploaded and set new poster for series {series_id} from {image_url}")
-            return True
-
-        except Timeout as e:
-            logger.error(f"Timeout while uploading poster for series {series_id} from {image_url}: {e}")
+            return status in {'uploaded', 'unchanged'}
+        except CoverImageError as e:
+            logger.error(str(e))
             return False
-        except RequestException as e:
-            logger.error(f"Failed to upload poster for series {series_id} from {image_url}: {e}")
-            return False
-
-    def _clean_other_thumbnails(self, series_id: str, keep_thumb_id: str) -> int:
-        """
-        Delete all thumbnails for the series except the one with keep_thumb_id.
-        """
-        thumbnails = self.get_series_thumbnails(series_id)
-        deleted_count = 0
-        for thumb in thumbnails:
-            if thumb.id != keep_thumb_id:
-                if self.delete_series_thumbnail(series_id, thumb.id):
-                    deleted_count += 1
-        return deleted_count

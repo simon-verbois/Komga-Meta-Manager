@@ -21,8 +21,7 @@ data:
         polling_interval_minutes: 5  # How often to check for new series (in minutes)
 
     komga:
-      url: "http://localhost:8080" # Your Komga instance URL
-      api_key: "YOUR_KOMGA_API_KEY"
+      url: "http://komga:25600" # Adjust to your Komga Service URL
       libraries:             # List of Komga libraries to process
         - "Manga"
         - "Webtoons"
@@ -31,6 +30,8 @@ data:
     provider:
       name: "anilist"        # Currently, only 'anilist' is supported
       min_score: 80          # Minimum score for a valid title match (0-100)
+      cache:
+        ttl_hours: 168
 
     processing:
       overwrite_existing: false # Overwrite existing metadata or only fill empty fields
@@ -66,6 +67,7 @@ data:
     translation:
       enabled: true          # Enable metadata translation
       provider: "deepl"     # Translation service: 'google' or 'deepl'
-      deepl:
-        api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
+      # DeepL API key is injected from KMM_DEEPL_API_KEY
       target_language: "EN-US"  # Target language code. For DeepL: use 'EN-US' or 'EN-GB' (not just 'EN')
+  translations.yml: |
+    {}

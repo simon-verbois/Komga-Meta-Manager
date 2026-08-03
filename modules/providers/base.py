@@ -10,6 +10,10 @@ from modules.models import AniListMedia
 
 logger = logging.getLogger(__name__)
 
+
+class MetadataProviderError(RuntimeError):
+    """Raised when a provider search fails rather than returning no matches."""
+
 class MetadataProvider(ABC):
     """Abstract base class for a metadata provider."""
 
@@ -37,9 +41,8 @@ class MetadataProvider(ABC):
 
         results = self._perform_search(search_term)
 
-        if results:
-            # Store as dicts to ensure JSON serializability
-            self.cache.set(search_term, [media.model_dump(mode='json') for media in results])
+        # Successful empty searches are cached too, preventing repeated API calls.
+        self.cache.set(search_term, [media.model_dump(mode='json') for media in results])
 
         return results
 

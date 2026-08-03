@@ -18,7 +18,7 @@ from modules.constants import (
     HTTP_TIMEOUTS,
     MAX_RETRIES
 )
-from .base import MetadataProvider
+from .base import MetadataProvider, MetadataProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -162,11 +162,11 @@ class AnilistProvider(MetadataProvider):
                 f"GraphQL error while querying AniList for '{search_term}': {e}. "
                 f"This may indicate rate limiting or an API issue."
             )
-            return []
+            raise MetadataProviderError(f"AniList GraphQL query failed: {e}") from e
         except Exception as e:
             # Catch-all for network errors, timeouts, etc.
             logger.error(
                 f"Unexpected error while querying AniList for '{search_term}': {e}",
                 exc_info=True
             )
-            return []
+            raise MetadataProviderError(f"AniList search failed: {e}") from e

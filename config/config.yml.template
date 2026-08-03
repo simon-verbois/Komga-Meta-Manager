@@ -23,9 +23,11 @@ komga:
 provider:
   name: "anilist"        # Currently, only 'anilist' is supported
   min_score: 80          # Minimum score for a valid title match (0-100)
+  cache:
+    ttl_hours: 168       # Cache lifetime; must be greater than zero
 
 processing:
-  overwrite_existing: false # Overwrite existing metadata or only fill empty fields
+  overwrite_existing: false # Overwrite scalar metadata and user-uploaded covers
   force_unlock: false    # Unlock locked fields before updating
   exclude_series:        # List of series titles to exclude from processing
     - "My Excluded Series"
@@ -53,7 +55,7 @@ processing:
       writers: false
       pencillers: false
     link: false          # Remove AniList links
-    cover_image: false
+    cover_image: false   # Deletes only USER_UPLOADED thumbnails
 
 translation:
   enabled: true          # Enable metadata translation
@@ -61,3 +63,6 @@ translation:
   deepl:
     api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'
   target_language: "EN-US"  # Target language code. For DeepL: use 'EN-US' or 'EN-GB' (not just 'EN')
+
+# KMM_KOMGA_API_KEY and KMM_DEEPL_API_KEY may be used instead of storing
+# secrets in this file. Environment variables take priority over YAML values.

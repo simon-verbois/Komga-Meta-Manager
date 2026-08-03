@@ -64,8 +64,8 @@ class DeepLTranslator(Translator):
         except FileNotFoundError:
             logger.info("Persistent translation cache not found. A new one will be created.")
             return {}
-        except json.JSONDecodeError:
-            logger.warning("Could not decode persistent cache file. Starting with an empty cache.")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Could not load persistent cache file. Starting with an empty cache: {e}")
             return {}
 
     def save_cache_to_disk(self):
@@ -130,10 +130,11 @@ class DeepLTranslator(Translator):
             return text
 
         # Layer 1: Manual Translations
-        if target_language in MANUAL_TRANSLATIONS and text in MANUAL_TRANSLATIONS[target_language]:
-            manual_translation = MANUAL_TRANSLATIONS[target_language][text]
-            logger.debug(f"Using manual translation for '{text}' -> '{manual_translation}'")
-            return manual_translation
+        for language_key in (target_language, target_language.lower(), target_language.split('-')[0].lower()):
+            if language_key in MANUAL_TRANSLATIONS and text in MANUAL_TRANSLATIONS[language_key]:
+                manual_translation = MANUAL_TRANSLATIONS[language_key][text]
+                logger.debug(f"Using manual translation for '{text}' -> '{manual_translation}'")
+                return manual_translation
 
         # Layer 2: Persistent Cache
         cache_key = f"{target_language}:{text}"

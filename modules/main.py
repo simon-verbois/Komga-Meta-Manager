@@ -5,6 +5,8 @@ Main entry point for the Manga Manager application.
 import logging
 import os
 import platform
+import signal
+import threading
 import time
 import psutil
 from dataclasses import dataclass
@@ -12,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from modules.config import load_config, AppConfig
-from modules.processor import process_libraries, watch_for_new_series
+from modules.processor import ProcessingResult, process_libraries, watch_for_new_series
 from modules.komga_client import KomgaClient
 from modules.providers import get_provider
 from modules.translators import get_translator
@@ -20,11 +22,13 @@ from modules.scheduler import Scheduler
 from modules.utils import FrameFormatter, log_frame
 
 logger = logging.getLogger(__name__)
+READINESS_FILE = Path("/tmp/kmm-ready")
+SHUTDOWN_EVENT = threading.Event()
 
 def display_header():
     """Displays header information in log format."""
     # Read version
-    with open('VERSION', 'r') as f:
+    with open(Path(__file__).resolve().parent.parent / 'VERSION', 'r', encoding='utf-8') as f:
         version = f.read().strip()
 
     # Check Docker
@@ -95,18 +99,18 @@ def setup_logging(debug: bool = False):
         logging.getLogger("urllib3").setLevel(logging.INFO)
         logging.getLogger("deepl").setLevel(logging.WARNING)
 
-def run_job_and_save_cache(config: AppConfig):
+def run_job_and_save_cache(config: AppConfig) -> ProcessingResult:
     """
     Wrapper for the main job that ensures the translator cache is saved after execution.
     """
-    translator_instance = None
+    result: Optional[ProcessingResult] = None
     try:
-        translator_instance = process_libraries(config)
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during the scheduled run: {e}", exc_info=True)
+        result = process_libraries(config, stop_event=SHUTDOWN_EVENT)
+        return result
     finally:
-        if translator_instance and hasattr(translator_instance, 'save_cache_to_disk'):
-            translator_instance.save_cache_to_disk()
+        translator = result.translator if result else None
+        if translator and hasattr(translator, 'save_cache_to_disk'):
+            translator.save_cache_to_disk()
 
 def initialize_watcher_series(komga_client: 'KomgaClient', target_libraries: dict) -> dict:
     """
@@ -136,14 +140,15 @@ def initialize_application() -> AppConfig:
         logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
     return app_config
 
-def run_once_mode(config: AppConfig):
+def run_once_mode(config: AppConfig) -> int:
     """Execute the application in run-once mode."""
     logging.info("Scheduler and watcher disabled. Running the job once.")
-    run_job_and_save_cache(config=config)
+    result = run_job_and_save_cache(config=config)
     logging.info("|                                                                                                    |")
     logging.info("|====================================================================================================|")
     log_frame("Komga Meta Manager Finished", 'center')
     logging.info("|====================================================================================================|")
+    return 0 if result.success else 1
 
 def initialize_scheduler(config: AppConfig) -> Optional[Scheduler]:
     """Initialize the scheduler if enabled. Returns Scheduler instance or None."""
@@ -172,6 +177,7 @@ class WatcherComponents:
     known_series: Optional[dict] = None
     target_libraries: Optional[dict] = None
     last_poll_time: float = 0
+    initialized: bool = False
 
 def initialize_watcher(config: AppConfig) -> WatcherComponents:
     """Initialize the watcher if enabled. Returns WatcherComponents."""
@@ -184,7 +190,7 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
 
     # Initialize components for watcher
     cache_dir = Path("/config/cache")
-    cache_dir.mkdir(exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     components.metadata_provider = get_provider(config.provider, cache_dir)
     if not components.metadata_provider:
@@ -207,6 +213,7 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
                 logger.info("Watcher translation initialized.")
             else:
                 logger.error("Failed to initialize translator for watcher.")
+                return WatcherComponents()
 
     # Initialize Komga client and libraries
     components.komga_client = KomgaClient(config.komga)
@@ -230,7 +237,8 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
         config, components.komga_client, components.target_libraries,
         components.known_series, components.metadata_provider, components.translator
     )
-    components.last_poll_time = time.time()  # Set after first check
+    components.last_poll_time = time.monotonic()  # Set after first check
+    components.initialized = True
 
     if has_processed:
         logging.info("|                                                                                                    |")
@@ -243,7 +251,7 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
 
 def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponents) -> bool:
     """Wrapper function for watcher polling that returns whether processing occurred."""
-    if not watcher_components.known_series:
+    if watcher_components.known_series is None:
         return False
 
     logger.debug("Watcher: Checking for new series...")
@@ -262,55 +270,90 @@ def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponen
 
     return has_processed
 
-def run_continuous_loop(config: AppConfig, scheduler: Optional[Scheduler], watcher_components: WatcherComponents):
+def run_continuous_loop(
+    config: AppConfig,
+    scheduler: Optional[Scheduler],
+    watcher_components: WatcherComponents,
+    stop_event: threading.Event,
+):
     """Run the main continuous loop for scheduler and/or watcher."""
     try:
         if scheduler:
             # Use the optimized scheduler that handles both scheduler and watcher
             watcher_func = None
-            if config.system.watcher.enabled and watcher_components.known_series:
-                watcher_func = lambda: watcher_poll_function(config, watcher_components)
+            if config.system.watcher.enabled and watcher_components.initialized:
+                def watcher_func():
+                    return watcher_poll_function(config, watcher_components)
 
-            scheduler.run(watcher_func)
+            scheduler.run(watcher_func, stop_event=stop_event)
         else:
             # Fallback: only watcher enabled, no scheduler
             logger.info("Only watcher enabled, running in legacy mode.")
-            while True:
+            while not stop_event.is_set():
                 if (config.system.watcher.enabled and
                     watcher_components.known_series is not None):
 
-                    current_time = time.time()
+                    current_time = time.monotonic()
                     poll_interval = config.system.watcher.polling_interval_minutes * 60
                     if current_time - watcher_components.last_poll_time >= poll_interval:
-                        watcher_poll_function(config, watcher_components)
-                        watcher_components.last_poll_time = current_time
+                        try:
+                            watcher_poll_function(config, watcher_components)
+                        except Exception as e:
+                            logger.error(f"Watcher poll failed: {e}", exc_info=config.system.debug)
+                        finally:
+                            watcher_components.last_poll_time = time.monotonic()
 
-                time.sleep(60)  # Check every minute
+                stop_event.wait(60)  # Check every minute
 
     except KeyboardInterrupt:
         logging.info("Shutdown signal received. Exiting gracefully.")
 
-def main():
+def main() -> int:
     """Main function to run the Manga Manager."""
     try:
+        READINESS_FILE.unlink(missing_ok=True)
+        SHUTDOWN_EVENT.clear()
         app_config = initialize_application()
+
+        def request_shutdown(signum, _frame):
+            logging.info(f"Shutdown signal {signum} received.")
+            SHUTDOWN_EVENT.set()
+
+        signal.signal(signal.SIGTERM, request_shutdown)
+        signal.signal(signal.SIGINT, request_shutdown)
 
         # Determine if we need continuous running (scheduler or watcher)
         continuous_mode = app_config.system.scheduler.enabled or app_config.system.watcher.enabled
 
         if not continuous_mode:
-            run_once_mode(app_config)
-            return
+            return run_once_mode(app_config)
 
         # Continuous mode: setup scheduler and watcher
         scheduler = initialize_scheduler(app_config)
-        watcher_components = initialize_watcher(app_config)
+        try:
+            watcher_components = initialize_watcher(app_config)
+        except Exception as e:
+            logging.error(f"Watcher initialization failed: {e}", exc_info=app_config.system.debug)
+            watcher_components = WatcherComponents()
+
+        if app_config.system.watcher.enabled and not watcher_components.initialized and scheduler is None:
+            logging.error("Watcher is the only enabled mode and could not initialize.")
+            return 1
 
         # Run the continuous loop
-        run_continuous_loop(app_config, scheduler, watcher_components)
+        READINESS_FILE.write_text("ready\n", encoding="utf-8")
+        try:
+            run_continuous_loop(app_config, scheduler, watcher_components, SHUTDOWN_EVENT)
+        finally:
+            READINESS_FILE.unlink(missing_ok=True)
+            translator = watcher_components.translator
+            if translator and hasattr(translator, 'save_cache_to_disk'):
+                translator.save_cache_to_disk()
+        return 0
 
     except Exception as e:
         logging.error(f"A critical error occurred during setup: {e}", exc_info=True)
+        return 1
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

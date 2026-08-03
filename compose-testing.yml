@@ -8,6 +8,8 @@ services:
     restart: no
     environment:
       - TZ=Europe/Brussels
+      - KMM_KOMGA_API_KEY=${KMM_KOMGA_API_KEY:-}
+      - KMM_DEEPL_API_KEY=${KMM_DEEPL_API_KEY:-}
     volumes:
       - ./config:/config
     command: sh -c "python -m modules.main"

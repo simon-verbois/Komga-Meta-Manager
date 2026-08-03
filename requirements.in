@@ -1,0 +1,11 @@
+requests
+PyYAML
+pydantic
+gql[requests]
+googletrans
+backoff
+deepl
+thefuzz
+python-Levenshtein
+psutil
+pillow

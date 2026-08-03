@@ -25,12 +25,12 @@ class Cache:
         self.cache: Dict[str, Dict[str, Any]] = {}
 
         # Read current application version
-        version_path = Path("/app/VERSION")
+        version_path = Path(__file__).resolve().parent.parent / "VERSION"
         try:
             self.current_version = version_path.read_text().strip()
             logger.debug(f"Application version read: {self.current_version}")
         except FileNotFoundError:
-            logger.warning("Application version file not found at /app/VERSION. Assuming 'unknown' version.")
+            logger.warning(f"Application version file not found at {version_path}. Assuming 'unknown' version.")
             self.current_version = "unknown"
         except Exception as e:
             logger.error(f"Error reading version file: {e}. Assuming 'unknown' version.")
@@ -59,7 +59,10 @@ class Cache:
                     )
                     self.cache = {}
                 else:
-                    self.cache = loaded_cache
+                    self.cache = {
+                        key: value for key, value in loaded_cache.items()
+                        if key != VERSION_KEY
+                    }
                     logger.info(f"Successfully loaded cache for '{self.cache_path.name}' with {len(self.cache)} entries.")
 
             except (json.JSONDecodeError, IOError) as e:
@@ -109,12 +112,15 @@ class Cache:
         log_frame("Cache Result", 'center')
         logging.info("|====================================================================================================|")
         try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             # Include current version in the cache
             cache_to_save = self.cache.copy()
             cache_to_save[VERSION_KEY] = self.current_version
 
-            with open(self.cache_path, 'w', encoding='utf-8') as f:
+            temp_path = self.cache_path.with_suffix(self.cache_path.suffix + '.tmp')
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_to_save, f, indent=2, ensure_ascii=False)
+            temp_path.replace(self.cache_path)
             logger.info(f"Successfully saved cache to {self.cache_path}.")
         except IOError as e:
             logger.error(f"Failed to save cache to {self.cache_path}. Error: {e}")

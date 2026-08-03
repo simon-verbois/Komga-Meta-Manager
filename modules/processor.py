@@ -1,10 +1,12 @@
 """
 Core processing logic for the Manga Manager.
 """
-import json
 import logging
+import re
+import threading
+import unicodedata
 from pathlib import Path
-from typing import List, Optional, Dict, Callable
+from typing import List, Optional, Dict
 from dataclasses import dataclass
 
 from modules.config import AppConfig
@@ -15,16 +17,31 @@ from modules.translators import get_translator, Translator
 from modules.models import KomgaSeries, AniListMedia, KomgaBook
 from modules.utils import clean_html
 from modules.utils import log_frame
+from modules.constants import ANILIST_STATUS_TO_KOMGA
 from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
-ANILIST_STATUS_TO_KOMGA = {
-    'RELEASING': 'ONGOING',
-    'FINISHED': 'ENDED',
-    'CANCELLED': 'ABANDONED',
-    'HIATUS': 'HIATUS'
-}
+
+@dataclass
+class ProcessingResult:
+    """Outcome of a complete library processing run."""
+    success: bool = True
+    processed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    translator: Optional[Translator] = None
+
+
+@dataclass
+class WatcherPollResult:
+    """Outcome of one watcher polling cycle."""
+    found: int = 0
+    processed: int = 0
+    failed: int = 0
+
+    def __bool__(self) -> bool:
+        return self.found > 0
 
 # Field processing configurations - centralized to avoid repetition
 FIELD_CONFIGS = {
@@ -102,7 +119,7 @@ def _process_tags_update(payload, series, best_match, config):
     current_tags_set = set(metadata.tags or [])
 
     if current_tags_set == set(new_tags_list):
-        return "- Tags: processed (no changes needed)."
+        return None
 
     payload['tags'] = new_tags_list
     if getattr(metadata, 'tags_lock') and config.processing.force_unlock:
@@ -125,7 +142,7 @@ def _process_tags_remove(payload, series, best_match, config):
                 payload['tagsLock'] = False
             return "- Tags: removed score tag."
         else:
-            return "- Tags: processed (no score tag to remove)."
+            return None
     return None
 
 def _process_links_update(payload, series, best_match, config):
@@ -133,12 +150,21 @@ def _process_links_update(payload, series, best_match, config):
     metadata = series.metadata
 
     if config.processing.update_fields.link and best_match:
-        new_links = getattr(metadata, 'links', [])
+        current_links = list(getattr(metadata, 'links', []))
         provider_label = config.provider.name.capitalize()
 
         # Remove existing provider links
-        new_links = [link for link in new_links if link.get('label') != provider_label]
-        new_links.append({"label": provider_label, "url": f"https://anilist.co/manga/{best_match.id}"})
+        new_links = [
+            link for link in current_links
+            if link.get('label', '').casefold() != provider_label.casefold()
+        ]
+        new_links.append({
+            "label": provider_label,
+            "url": best_match.siteUrl or f"https://anilist.co/manga/{best_match.id}",
+        })
+
+        if new_links == current_links:
+            return None
 
         payload['links'] = new_links
         if hasattr(metadata, 'links_lock') and getattr(metadata, 'links_lock') and config.processing.force_unlock:
@@ -162,7 +188,7 @@ def _process_links_remove(payload, series, best_match, config):
                 payload['linksLock'] = False
             return "- Links: removed provider link."
         else:
-            return "- Links: processed (no provider link to remove)."
+            return None
     return None
 
 @dataclass
@@ -189,6 +215,15 @@ class GenericFieldHandler:
         current_value = getattr(metadata, self.field_name)
         is_locked = getattr(metadata, self.field_name + '_lock', False)
 
+        if is_locked and not config.processing.force_unlock:
+            return None
+
+        # Collection handlers implement additive/idempotent semantics and must
+        # run even when a collection already contains unrelated values.
+        field_config = FIELD_CONFIGS.get(self.field_name, {}).get(self.operation)
+        if field_config and 'custom_handler' in field_config:
+            return field_config['custom_handler'](payload, series, best_match, config, translator, komga_client)
+
         if self.operation == 'update':
             should_process = should_update_field(current_value, is_locked, config)
         else:
@@ -196,11 +231,6 @@ class GenericFieldHandler:
 
         if not should_process:
             return None
-
-        # Use custom handler if defined, otherwise use generic logic
-        field_config = FIELD_CONFIGS.get(self.field_name, {}).get(self.operation)
-        if field_config and 'custom_handler' in field_config:
-            return field_config['custom_handler'](payload, series, best_match, config, translator, komga_client)
 
         # Generic processing logic
         return self._process_generic_field(payload, series, best_match, config, translator, field_config)
@@ -249,11 +279,21 @@ class CoverImageHandler:
         if not image_url:
             return None
 
-        if config.system.dry_run:
+        if not komga_client:
+            return None
+
+        status = komga_client.update_series_poster(
+            series.id,
+            image_url,
+            overwrite_existing=config.processing.overwrite_existing,
+            dry_run=config.system.dry_run,
+        )
+        if status == 'would_upload':
             return f"- Cover Image: Will be updated from {image_url}"
-        else:
-            success = komga_client.upload_series_poster(series.id, image_url) if komga_client else False
-            return f"- Cover Image: {'Successfully updated' if success else 'Failed to update'} from {image_url}"
+        if status == 'uploaded':
+            return f"- Cover Image: Successfully updated from {image_url}"
+        logger.debug("Cover image for '%s' was %s", series.name, status)
+        return None
 
 # Global field handlers - now using generic handler with configuration
 FIELD_HANDLERS = [
@@ -281,16 +321,22 @@ def choose_best_match(series_title: str, candidates: List[AniListMedia], min_sco
     if not candidates:
         return None
 
+    normalized_series_title = _normalize_title(series_title)
     scored_candidates = []
     for candidate in candidates:
-        titles_to_check = [candidate.title.english, candidate.title.romaji]
+        if candidate.isAdult:
+            continue
+        titles_to_check = [candidate.title.english, candidate.title.romaji, candidate.title.native]
         titles_to_check = [t for t in titles_to_check if t]  # Filter out None titles
         
         if not titles_to_check:
             continue
 
         # Calculate the highest score among the available titles
-        score = max(fuzz.ratio(series_title.lower(), t.lower()) for t in titles_to_check)
+        score = max(
+            fuzz.WRatio(normalized_series_title, _normalize_title(title))
+            for title in titles_to_check
+        )
         
         if score >= min_score:
             scored_candidates.append({'candidate': candidate, 'score': score})
@@ -305,6 +351,13 @@ def choose_best_match(series_title: str, candidates: List[AniListMedia], min_sco
     
     return best['candidate']
 
+
+def _normalize_title(title: str) -> str:
+    """Normalize punctuation, Unicode and whitespace before fuzzy matching."""
+    normalized = unicodedata.normalize('NFKC', title).casefold()
+    normalized = re.sub(r'[^\w\s]', ' ', normalized, flags=re.UNICODE)
+    return re.sub(r'\s+', ' ', normalized).strip()
+
 def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bool:
     """Helper function to determine if a metadata field should be updated."""
     if is_locked and not config.processing.force_unlock:
@@ -313,19 +366,24 @@ def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bo
         return True
     return not current_value
 
-def process_libraries(config: AppConfig) -> Optional[Translator]:
+def process_libraries(
+    config: AppConfig,
+    stop_event: Optional[threading.Event] = None,
+) -> ProcessingResult:
     """
     Main processing function that iterates through libraries and series.
-    It now returns the translator instance so its cache can be saved.
+    Returns a structured outcome suitable for CLI exit codes and scheduling.
     """
     cache_dir = Path("/config/cache")
-    cache_dir.mkdir(exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    result = ProcessingResult()
 
     komga_client = KomgaClient(config.komga)
     metadata_provider = get_provider(config.provider, cache_dir)
     if not metadata_provider:
         logger.error(f"Failed to initialize provider '{config.provider.name}'. Aborting.")
-        return None
+        result.success = False
+        return result
 
     translator: Optional[Translator] = None
     if config.translation and config.translation.enabled:
@@ -336,7 +394,8 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
                 translator_kwargs['config'] = config.translation.deepl
             else:
                 logger.error("DeepL provider is selected but its configuration is missing.")
-                return None
+                result.success = False
+                return result
         
         translator = get_translator(translator_provider, **translator_kwargs)
 
@@ -344,20 +403,29 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
             logger.info(f"Translation enabled to target language: '{config.translation.target_language}'")
         else:
             logger.error("Failed to initialize translator. Translation will be disabled.")
+            result.success = False
+            return result
+
+    result.translator = translator
 
     all_libraries = komga_client.get_libraries()
     if not all_libraries:
-        logger.error("Could not retrieve libraries from Komga. Aborting.")
-        return translator
+        logger.error("No libraries were returned by Komga. Aborting.")
+        result.success = False
+        return result
 
     target_libraries = {lib.name: lib.id for lib in all_libraries if lib.name in config.komga.libraries}
     if not target_libraries:
         logger.warning("No matching libraries found on Komga server based on your config. Exiting.")
-        return translator
+        result.success = False
+        return result
 
     logger.info(f"Found {len(target_libraries)} target library/libraries to process: {list(target_libraries.keys())}")
 
     for lib_name, lib_id in target_libraries.items():
+        if stop_event and stop_event.is_set():
+            logger.info("Processing interrupted before the next library.")
+            break
         logging.info("|                                                                                                    |")
         logging.info("|====================================================================================================|")
         log_frame(f"Processing Library: {lib_name}", 'center')
@@ -370,14 +438,24 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
             continue
 
         for series in series_list:
+            if stop_event and stop_event.is_set():
+                logger.info("Processing interrupted before the next series.")
+                break
             if series.name in config.processing.exclude_series:
                 logger.info(f"Skipping series '{series.name}', excluded.")
+                result.skipped += 1
                 continue
 
             try:
-                proposed_changes = process_single_series(series, config, komga_client, metadata_provider, translator)
+                process_single_series(series, config, komga_client, metadata_provider, translator)
+                result.processed += 1
             except Exception as e:
-                logger.error(f"Error processing series '{series.name}': {e} - skipping to next series")
+                result.failed += 1
+                result.success = False
+                logger.error(
+                    f"Error processing series '{series.name}': {e} - skipping to next series",
+                    exc_info=config.system.debug,
+                )
                 continue
 
     if metadata_provider:
@@ -387,9 +465,9 @@ def process_libraries(config: AppConfig) -> Optional[Translator]:
     if translator and hasattr(translator, 'log_cache_summary'):
         translator.log_cache_summary()
 
-    return translator
+    return result
 
-def watch_for_new_series(config: AppConfig, komga_client: KomgaClient, target_libraries: dict, known_series: dict, metadata_provider, translator):
+def watch_for_new_series(config: AppConfig, komga_client: KomgaClient, target_libraries: dict, known_series: dict, metadata_provider, translator) -> WatcherPollResult:
     """
     Poll for new series in libraries and process only the new ones.
     Updates known_series in place.
@@ -402,19 +480,21 @@ def watch_for_new_series(config: AppConfig, komga_client: KomgaClient, target_li
         metadata_provider: Pre-initialized metadata provider
         translator: Pre-initialized translator (can be None)
     """
-    new_series_found = False
+    result = WatcherPollResult()
     komga_logger = logging.getLogger('modules.komga_client')
     original_level = komga_logger.level
 
     for lib_name, lib_id in target_libraries.items():
         # Silence komga_client logs during polling to reduce noise
         komga_logger.setLevel(logging.WARNING)
-        current_series = komga_client.get_series_in_library(lib_id, lib_name)
-        komga_logger.setLevel(original_level)
+        try:
+            current_series = komga_client.get_series_in_library(lib_id, lib_name)
+        finally:
+            komga_logger.setLevel(original_level)
 
         new_series = [s for s in current_series if s.id not in known_series[lib_id]]
         if new_series:
-            new_series_found = True
+            result.found += len(new_series)
             logging.info("|                                                                                                    |")
             logging.info("|====================================================================================================|")
             log_frame("Watcher", 'center')
@@ -423,20 +503,27 @@ def watch_for_new_series(config: AppConfig, komga_client: KomgaClient, target_li
             for series in new_series:
                 if series.name in config.processing.exclude_series:
                     logger.info(f"Watcher: Skipping excluded series '{series.name}'")
+                    known_series[lib_id].add(series.id)
                     continue
                 logger.info(f"Watcher: Processing new series '{series.name}'")
-                process_single_series(series, config, komga_client, metadata_provider, translator)
-                known_series[lib_id].add(series.id)
+                try:
+                    process_single_series(series, config, komga_client, metadata_provider, translator)
+                except Exception as e:
+                    result.failed += 1
+                    logger.error(f"Watcher: Failed to process '{series.name}': {e}", exc_info=config.system.debug)
+                else:
+                    result.processed += 1
+                    known_series[lib_id].add(series.id)
         else:
             logger.debug(f"Watcher: No new series in library '{lib_name}'")
 
-    if new_series_found:
+    if result.found:
         # Save caches after processing
         metadata_provider.save_cache()
         if translator and hasattr(translator, 'save_cache_to_disk'):
             translator.save_cache_to_disk()
 
-    return new_series_found
+    return result
 
 
 
@@ -531,18 +618,18 @@ def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: 
         type_str = ', '.join(types) if types else "authors"
         return f"- Authors (remove {type_str}): No changes needed."
 
-def _remove_cover_image(series: KomgaSeries, config: AppConfig) -> Optional[str]:
+def _remove_cover_image(series: KomgaSeries, config: AppConfig, komga_client: KomgaClient) -> Optional[str]:
     if not config.processing.remove_fields.cover_image:
         return None
 
-    if config.system.dry_run:
-        return "- Cover Image: Will be removed."
-    else:
-        # Note: Komga API doesn't have a specific endpoint to delete cover image
-        # We could upload a placeholder or leave it as is for now
-        logger.warning("Cover image removal not fully implemented in Komga API")
-        return "- Cover Image: Removal not supported by Komga API."
-    return None
+    removed_count = komga_client.remove_uploaded_series_posters(
+        series.id,
+        dry_run=config.system.dry_run,
+    )
+    if removed_count == 0:
+        return None
+    action = "Will remove" if config.system.dry_run else "Removed"
+    return f"- Cover Image: {action} {removed_count} user-uploaded thumbnail(s)."
 
 def is_story_writer_role(role: str) -> bool:
     """Check if a role indicates story writing (case-insensitive match for 'story')."""
@@ -677,7 +764,7 @@ def should_remove_field(current_value, is_locked: bool, config: AppConfig) -> bo
     """Helper function to determine if a metadata field should be removed."""
     if is_locked and not config.processing.force_unlock:
         return False
-    return True
+    return bool(current_value)
 
 def process_single_series(
     series: KomgaSeries,
@@ -708,7 +795,7 @@ def process_single_series(
                 change_descriptions.append(change)
 
     # Cover image remove (special case)
-    if cover_remove_change := _remove_cover_image(series, config):
+    if cover_remove_change := _remove_cover_image(series, config, komga_client):
         change_descriptions.append(cover_remove_change)
 
     books = []

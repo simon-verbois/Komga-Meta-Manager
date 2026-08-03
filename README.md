@@ -1,65 +1,83 @@
 <p align="center">
-  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/graphs/traffic"><img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fsimon-verbois%2FKomga-Meta-Manager&label=Visitors&countColor=26A65B&style=flat" alt="Visitor Count" height="28"/></a>
   <a href="https://github.com/simon-verbois/Komga-Meta-Manager/commits/main"><img src="https://img.shields.io/github/last-commit/simon-verbois/Komga-Meta-Manager?style=flat" alt="GitHub Last Commit" height="28"/></a>
   <a href="https://github.com/simon-verbois/Komga-Meta-Manager/stargazers"><img src="https://img.shields.io/github/stars/simon-verbois/Komga-Meta-Manager?style=flat&color=yellow" alt="GitHub Stars" height="28"/></a>
-  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/issues"><img src="https://img.shields.io/github/issues/simon-verbois/Komga-Meta-Manager?style=flat&color=red" alt="GitHub Issues" height="28"/></a>
-  <a href="https://github.com/simon-verbois/Komga-Meta-Manager/pulls"><img src="https://img.shields.io/github/issues-pr/simon-verbois/Komga-Meta-Manager?style=flat&color=blue" alt="GitHub Pull Requests" height="28"/></a>
 </p>
 
 # Komga Meta Manager
 
-Automatically enriches Komga manga series metadata using AniList API, with optional translation and persistent caching.
+Komga Meta Manager enriches Komga manga metadata from AniList, with optional translation, persistent caches, scheduled runs and discovery of newly added series.
 
 ## Features
 
-- **Auto-detection** of series in specified Komga libraries
-- **High-performance** fetching with AniList API integration
-- **Smart caching** to avoid re-processing and prevent data loss
-- **Scheduled processing** or on-demand execution
-- **Translation support** using Google Translate or DeepL
-- **Docker and Kubernetes ready** for production deployment
-- **YAML configuration** for all settings
+- AniList title matching with configurable confidence threshold
+- Summary, genres, status, authors, score tag, AniList link and cover management
+- Safe dry-run mode and granular update/removal flags
+- Google Translate or DeepL translation with manual overrides
+- Daily scheduler and new-series watcher
+- Docker, Compose and Kubernetes deployment
 
-## Quick Start
-
-### Configuration
-
-See `config/config.yml.template` for all available options with inline comments explaining each parameter.<br>
-Rename the template to `config/config.yml`.
-
-### Start
+## Quick start
 
 ```bash
-# Clone repository
-git clone <repository-url>
+git clone https://github.com/simon-verbois/Komga-Meta-Manager.git
 cd Komga-Meta-Manager
-
-# Edit compose and config with your data
-vim compose.yml
-vim config/config.yml
-
-# Build and run
+cp config/config.yml.template config/config.yml
+$EDITOR config/config.yml
 docker compose up
 ```
 
-## Deployment
+The complete configuration is documented in `config/config.yml.template`. Keep `system.dry_run: true` for the first execution and review the proposed changes before enabling writes.
 
-- **Docker**: See compose.yml for production.
+Secrets can stay in `config.yml` for backward compatibility, or be injected with environment variables:
+
+- `KMM_KOMGA_API_KEY`
+- `KMM_DEEPL_API_KEY`
+
+Environment variables take priority over YAML values.
+
+## Processing behavior
+
+- `overwrite_existing: false` fills empty scalar fields. Score tags and AniList links are merged with existing values.
+- `force_unlock: false` preserves locked metadata.
+- Every `remove_fields` flag defaults to `false`; removal is always explicit.
+- Covers are added only when no user-uploaded cover exists, unless `overwrite_existing` is enabled.
+- Replacing a cover never deletes previous uploads. Explicit cover removal deletes only `USER_UPLOADED` thumbnails.
+- AniList adult results are excluded from automatic matching.
+
+The process exits with a non-zero status when configuration, initialization or a run-once processing operation fails. Scheduled mode stays alive after an individual failed run and reports the failure in logs.
 
 ## Development
 
-Local build and run with:
+Runtime and development dependencies are fully pinned with hashes. Regenerate them after editing the corresponding `.in` file:
 
 ```bash
-docker compose -f compose-testing.yml build && docker compose -f compose-testing.yml up
+python -m pip install pip-tools
+python -m piptools compile --upgrade --generate-hashes --strip-extras -o requirements.txt requirements.in
+python -m piptools compile --upgrade --generate-hashes --strip-extras -o requirements-dev.txt requirements-dev.in
 ```
 
-## License
+Run the quality gates with:
 
-See LICENSE file.
+```bash
+python -m pip install --require-hashes -r requirements-dev.txt
+ruff check modules tests
+pytest --cov --cov-report=term-missing --cov-fail-under=60
+pip-audit -r requirements.txt --disable-pip
+docker compose -f compose.yml config --quiet
+docker compose -f compose-testing.yml config --quiet
+```
 
-## Disclaimer
+For a local container build and one-shot run:
 
-This is a personal automation script I use on my home server to enrich Komga manga series metadata. I'm sharing it with the community as-is, without any warranty or guarantee of maintenance.
+```bash
+docker compose -f compose-testing.yml build
+docker compose -f compose-testing.yml up
+```
 
-This project was developed with the assistance of a self-hosted Mistral AI model.
+## Kubernetes
+
+See `k8s-manifest/README.md`. Kubernetes credentials are stored in a Secret generated locally and are not committed.
+
+## License and disclaimer
+
+Licensed under the terms in `LICENSE`. This is a personal automation project shared as-is, without warranty or guarantee of maintenance.

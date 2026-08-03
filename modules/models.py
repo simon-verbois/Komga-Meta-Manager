@@ -26,9 +26,9 @@ class KomgaSeriesMetadata(BaseModel):
     age_rating_lock: bool = Field(..., alias='ageRatingLock')
     language: str
     language_lock: bool = Field(..., alias='languageLock')
-    genres: Set[str] = set()
+    genres: Set[str] = Field(default_factory=set)
     genres_lock: bool = Field(..., alias='genresLock')
-    tags: Set[str] = set()
+    tags: Set[str] = Field(default_factory=set)
     tags_lock: bool = Field(..., alias='tagsLock')
     links: List[dict] = Field(default_factory=list)
     links_lock: bool = Field(..., alias='linksLock')
@@ -105,8 +105,8 @@ class AniListMedia(BaseModel):
     title: AniListTitle
     description: Optional[str] = None
     status: Optional[str] = None
-    genres: Optional[List[str]] = []
-    tags: Optional[List[dict]] = []
+    genres: Optional[List[str]] = Field(default_factory=list)
+    tags: Optional[List[dict]] = Field(default_factory=list)
     staff: Optional[AniListStaffResponse] = None
     popularity: int = 0
     averageScore: Optional[int] = None

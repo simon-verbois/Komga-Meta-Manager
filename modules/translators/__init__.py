@@ -30,13 +30,15 @@ def get_translator(provider: str, **kwargs: Any) -> Optional[Translator]:
     provider_lower = provider.lower()
     if provider_lower == 'google':
         logger.info("Using Google Translate provider.")
-        return GoogleTranslator()
+        translator = GoogleTranslator()
+        return translator if translator.translator is not None else None
     elif provider_lower == 'deepl':
         logger.info("Using DeepL provider.")
         if 'config' not in kwargs:
             logger.error("DeepL config is required but was not provided.")
             return None
-        return DeepLTranslator(config=kwargs['config'])
+        translator = DeepLTranslator(config=kwargs['config'])
+        return translator if translator.translator is not None else None
     else:
         logger.warning(f"Unknown translation provider: '{provider}'. Translation will be disabled.")
         return None

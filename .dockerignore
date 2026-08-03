@@ -1,0 +1,12 @@
+.git
+.gitea
+.pytest_cache
+.ruff_cache
+.coverage
+config
+images
+k8s-manifest
+tests
+compose*.yml
+requirements-dev.*
+README.md

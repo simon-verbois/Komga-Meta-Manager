@@ -8,6 +8,8 @@ from pathlib import Path
 HTTP_CONNECT_TIMEOUT = 5  # seconds
 HTTP_READ_TIMEOUT = 30  # seconds
 HTTP_TIMEOUTS = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+MAX_COVER_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MiB
+MAX_COVER_IMAGE_PIXELS = 40_000_000
 
 # Retry Configuration
 MAX_RETRIES = 3
@@ -17,14 +19,12 @@ RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s
 ANILIST_API_URL = "https://graphql.anilist.co"
 ANILIST_SEARCH_RESULTS_PER_PAGE = 99
 ANILIST_STAFF_MAX = 50
-ANILIST_MIN_SCORE_DEFAULT = 80
 
 # Komga API
 KOMGA_API_V1_PATH = "/api/v1"
 KOMGA_SERIES_PAGE_SIZE = 100
 
 # Cache Configuration
-CACHE_TTL_HOURS_DEFAULT = 168  # 7 days
 CACHE_SAVE_INTERVAL = 50  # Save cache every N additions
 
 # File Paths

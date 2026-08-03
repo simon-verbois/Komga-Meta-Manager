@@ -18,11 +18,23 @@ spec:
     spec:
       containers:
       - name: komga-meta-manager
-        image: simonverbois/komga-meta-manager:latest
+        image: simonverbois/komga-meta-manager:1.0.0
+        imagePullPolicy: IfNotPresent
         command: ["python", "-m", "modules.main"]
         env:
         - name: TZ
           value: "Europe/Brussels"
+        - name: KMM_KOMGA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: komga-meta-manager-secrets
+              key: komga-api-key
+        - name: KMM_DEEPL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: komga-meta-manager-secrets
+              key: deepl-api-key
+              optional: true
         resources:
           limits:
             cpu: "4"
@@ -30,36 +42,57 @@ spec:
           requests:
             cpu: "1"
             memory: "512M"
-        livenessProbe:
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        startupProbe:
           exec:
             command:
-            - pgrep
-            - -f
-            - "python -m modules.main"
-          initialDelaySeconds: 30
-          periodSeconds: 60
-          timeoutSeconds: 10
-          failureThreshold: 3
+            - python
+            - -c
+            - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/kmm-ready').exists() else 1)"
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 12
         readinessProbe:
           exec:
             command:
-            - pgrep
-            - -f
-            - "python -m modules.main"
-          initialDelaySeconds: 5
+            - python
+            - -c
+            - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/kmm-ready').exists() else 1)"
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 2
         volumeMounts:
         - name: config-volume
           mountPath: /config/config.yml
           subPath: config.yml
+          readOnly: true
+        - name: config-volume
+          mountPath: /config/translations.yml
+          subPath: translations.yml
+          readOnly: true
         - name: cache-volume
           mountPath: /config/cache
+        - name: runtime-volume
+          mountPath: /tmp
 
       volumes:
       - name: config-volume
         configMap:
           name: komga-meta-manager-config
+          defaultMode: 0440
       - name: cache-volume
         persistentVolumeClaim:
           claimName: komga-meta-manager-cache
+      - name: runtime-volume
+        emptyDir: {}
+
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
