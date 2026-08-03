@@ -70,11 +70,12 @@ jobs:
           images: simonverbois/komga-meta-manager
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
           labels: |
             org.opencontainers.image.version=${{ forge.ref_name }}
             org.opencontainers.image.revision=${{ forge.sha }}
-
+            org.opencontainers.image.source=https://github.com/simon-verbois/Komga-Meta-Manager
+            org.opencontainers.image.url=https://github.com/simon-verbois/Komga-Meta-Manager
+            
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
