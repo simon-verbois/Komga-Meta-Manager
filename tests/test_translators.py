@@ -6,15 +6,13 @@ from modules.translators.deepl import DeepLTranslator
 from modules.translators.google import GoogleTranslator
 
 
-def test_google_translation_cache_manual_and_api(tmp_path) -> None:
+def test_google_translation_cache_and_api(tmp_path) -> None:
     with patch("modules.translators.google.GoogletransTranslator") as constructor:
         translator = GoogleTranslator()
     translator.cache_path = tmp_path / "google.json"
     translator.translator = constructor.return_value
     translator.translator.translate.return_value = Mock(text="Bonjour")
 
-    with patch("modules.translators.google.MANUAL_TRANSLATIONS", {"fr": {"Manual": "Manuel"}}):
-        assert translator.translate("Manual", "fr-FR") == "Manuel"
     assert translator.translate("Hello", "fr") == "Bonjour"
     assert translator.translate("Hello", "fr") == "Bonjour"
     assert translator.cache_hits == 1
@@ -30,6 +28,28 @@ def test_google_unsupported_language_returns_original() -> None:
     assert translator.translate("Hello", "not-a-language") == "Hello"
 
 
+def test_google_skips_api_when_source_already_matches_target() -> None:
+    translator = GoogleTranslator.__new__(GoogleTranslator)
+    translator.translator = Mock()
+    translator.cache = {}
+    translator.cache_hits = translator.cache_misses = translator.unsaved_changes = 0
+
+    assert translator.translate("Résumé français", "fr", source_language="FR-fr") == "Résumé français"
+    translator.translator.translate.assert_not_called()
+    assert translator.cache_misses == 0
+
+
+def test_google_forces_known_source_language_for_ambiguous_text() -> None:
+    translator = GoogleTranslator.__new__(GoogleTranslator)
+    translator.translator = Mock()
+    translator.translator.translate.return_value = Mock(text="Fils")
+    translator.cache = {}
+    translator.cache_hits = translator.cache_misses = translator.unsaved_changes = 0
+
+    assert translator.translate("Son", "fr", source_language="en-US") == "Fils"
+    translator.translator.translate.assert_called_once_with("Son", dest="fr", src="en")
+
+
 def test_google_async_api_is_bridged_to_sync() -> None:
     translator = GoogleTranslator.__new__(GoogleTranslator)
     translator.translator = Mock()
@@ -37,19 +57,39 @@ def test_google_async_api_is_bridged_to_sync() -> None:
     assert translator._translate_with_retry("Hello", "fr") == "Bonjour"
 
 
-def test_deepl_translation_cache_manual_and_api(tmp_path) -> None:
+def test_deepl_translation_cache_and_api(tmp_path) -> None:
     with patch("modules.translators.deepl.deepl.Translator") as constructor:
         translator = DeepLTranslator(DeepLConfig(api_key="secret"))
     translator.cache_path = tmp_path / "deepl.json"
     translator.translator = constructor.return_value
     translator.translator.translate_text.return_value = Mock(text="Bonjour")
 
-    with patch("modules.translators.deepl.MANUAL_TRANSLATIONS", {"fr": {"Manual": "Manuel"}}):
-        assert translator.translate("Manual", "FR-FR") == "Manuel"
     assert translator.translate("Hello", "FR") == "Bonjour"
     assert translator.translate("Hello", "FR") == "Bonjour"
     translator.save_cache_to_disk()
     assert (tmp_path / "deepl.json").exists()
+
+
+def test_deepl_skips_api_when_source_already_matches_target() -> None:
+    translator = DeepLTranslator.__new__(DeepLTranslator)
+    translator.translator = Mock()
+    translator.cache = {}
+    translator.cache_hits = translator.cache_misses = translator.unsaved_changes = 0
+
+    assert translator.translate("Résumé français", "FR-FR", source_language="fr") == "Résumé français"
+    translator.translator.translate_text.assert_not_called()
+    assert translator.cache_misses == 0
+
+
+def test_deepl_forces_known_source_language_for_ambiguous_text() -> None:
+    translator = DeepLTranslator.__new__(DeepLTranslator)
+    translator.translator = Mock()
+    translator.translator.translate_text.return_value = Mock(text="Fils")
+    translator.cache = {}
+    translator.cache_hits = translator.cache_misses = translator.unsaved_changes = 0
+
+    assert translator.translate("Son", "FR-FR", source_language="en-US") == "Fils"
+    translator.translator.translate_text.assert_called_once_with("Son", target_lang="FR-FR", source_lang="EN")
 
 
 def test_translator_factory_handles_supported_and_unknown_providers() -> None:

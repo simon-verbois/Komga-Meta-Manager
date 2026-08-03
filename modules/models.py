@@ -2,8 +2,8 @@
 """
 Pydantic models for structuring data from APIs.
 """
-from typing import List, Optional, Set, Union
-from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional, Set, Union
+from pydantic import BaseModel, Field, PrivateAttr
 
 # --- Komga Models ---
 
@@ -75,41 +75,45 @@ class KomgaBook(BaseModel):
     number: Union[str, int]
     metadata: KomgaBookMetadata
 
-# --- AniList Models ---
+# --- Provider-neutral metadata models ---
 
-class AniListTitle(BaseModel):
-    romaji: Optional[str] = None
-    english: Optional[str] = None
-    native: Optional[str] = None
+class MetadataCreator(BaseModel):
+    name: str
+    role: Literal["writer", "penciller"]
 
-class AniListCoverImage(BaseModel):
-    extraLarge: Optional[str] = None
-    large: Optional[str] = None
-    medium: Optional[str] = None
 
-class AniListStaffName(BaseModel):
-    full: Optional[str] = None
-
-class AniListStaffNode(BaseModel):
-    name: AniListStaffName
-
-class AniListStaffEdge(BaseModel):
-    role: str
-    node: AniListStaffNode
-
-class AniListStaffResponse(BaseModel):
-    edges: Optional[List[AniListStaffEdge]] = Field(default_factory=list)
-
-class AniListMedia(BaseModel):
-    id: int
-    title: AniListTitle
-    description: Optional[str] = None
-    status: Optional[str] = None
-    genres: Optional[List[str]] = Field(default_factory=list)
-    tags: Optional[List[dict]] = Field(default_factory=list)
-    staff: Optional[AniListStaffResponse] = None
+class MetadataCandidate(BaseModel):
+    provider: str
+    external_id: str
+    titles: List[str] = Field(default_factory=list)
+    adult: bool = False
     popularity: int = 0
-    averageScore: Optional[int] = None
-    siteUrl: Optional[str] = None
-    isAdult: bool = False
-    coverImage: Optional[AniListCoverImage] = None
+    year: Optional[str] = None
+    media_type: Optional[str] = None
+
+    @property
+    def display_title(self) -> str:
+        return self.titles[0] if self.titles else self.external_id
+
+
+class MetadataRecord(MetadataCandidate):
+    description: Optional[str] = None
+    description_language: Optional[str] = None
+    publisher: Optional[str] = None
+    status: Optional[Literal["ONGOING", "ENDED", "ABANDONED", "HIATUS"]] = None
+    genres: List[str] = Field(default_factory=list)
+    genre_languages: Dict[str, str] = Field(default_factory=dict)
+    creators: List[MetadataCreator] = Field(default_factory=list)
+    score: Optional[float] = None  # normalized to 0-100
+    site_url: Optional[str] = None
+    provider_links: Dict[str, str] = Field(default_factory=dict)
+    cover_urls: List[str] = Field(default_factory=list)
+    _field_sources: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def source_provider(self, field_name: str) -> str:
+        """Return the provider that supplied a normalized metadata field."""
+        return self._field_sources.get(field_name, self.provider)
+
+    def set_field_source(self, field_name: str, provider_name: str) -> None:
+        """Record field provenance while building a provider fallback result."""
+        self._field_sources[field_name] = provider_name

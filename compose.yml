@@ -1,12 +1,10 @@
 ---
 services:
   komga-meta-manager:
-    image: simonverbois/komga-meta-manager:1.0.0
+    image: simonverbois/komga-meta-manager:latest
     container_name: komga-meta-manager
-    restart: unless-stopped
+    restart: no
     environment:
       - TZ=Europe/Brussels
-      - KMM_KOMGA_API_KEY=${KMM_KOMGA_API_KEY:-}
-      - KMM_DEEPL_API_KEY=${KMM_DEEPL_API_KEY:-}
     volumes:
       - ./config:/config

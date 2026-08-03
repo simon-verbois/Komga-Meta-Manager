@@ -1,172 +1,150 @@
 # -*- coding: utf-8 -*-
-"""
-Provider for interacting with the AniList GraphQL API.
-"""
+"""AniList adapter for the provider-neutral metadata contract."""
 import logging
 from pathlib import Path
 from typing import List
 
-from gql import gql, Client
-from gql.transport.requests import RequestsHTTPTransport
+from gql import Client, gql
 from gql.transport.exceptions import TransportQueryError
+from gql.transport.requests import RequestsHTTPTransport
 
-from modules.models import AniListMedia
 from modules.constants import (
     ANILIST_API_URL,
     ANILIST_SEARCH_RESULTS_PER_PAGE,
-    ANILIST_STAFF_MAX,
     HTTP_TIMEOUTS,
-    MAX_RETRIES
+    MAX_RETRIES,
 )
+from modules.models import MetadataCandidate, MetadataCreator, MetadataRecord
 from .base import MetadataProvider, MetadataProviderError
 
 logger = logging.getLogger(__name__)
 
+STATUS_MAP = {
+    "RELEASING": "ONGOING",
+    "FINISHED": "ENDED",
+    "CANCELLED": "ABANDONED",
+    "HIATUS": "HIATUS",
+}
+
+
+def _unique_strings(values) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def _titles(media: dict) -> list[str]:
+    title = media.get("title") or {}
+    return _unique_strings([
+        title.get("english"),
+        title.get("romaji"),
+        title.get("native"),
+        *(media.get("synonyms") or []),
+    ])
+
+
 class AnilistProvider(MetadataProvider):
-    """
-    A provider to fetch manga metadata from the AniList GraphQL API.
-
-    This provider searches for manga on AniList and retrieves comprehensive
-    metadata including titles, descriptions, genres, tags, and cover images.
-    Results are cached to minimize API calls.
-
-    Attributes:
-        client: The GraphQL client for AniList API
-        cache_dir: Directory for storing cached responses
-        cache_ttl_hours: Time-to-live for cache entries in hours
-    """
-
-    def __init__(self, cache_dir: Path, cache_ttl_hours: int):
+    def __init__(self, cache_dir: Path, cache_ttl_hours: int, preferred_language: str = "en"):
         super().__init__(cache_dir, cache_ttl_hours)
-        
-        # Configure transport with timeouts and retries
         transport = RequestsHTTPTransport(
             url=ANILIST_API_URL,
             verify=True,
             retries=MAX_RETRIES,
-            timeout=HTTP_TIMEOUTS[1]  # Use read timeout for GraphQL queries
+            timeout=HTTP_TIMEOUTS[1],
         )
-        
-        self.client = Client(
-            transport=transport,
-            fetch_schema_from_transport=False
-        )
-        
-        logger.info(f"AniList Provider initialized with {cache_ttl_hours}h cache TTL")
+        self.client = Client(transport=transport, fetch_schema_from_transport=False)
 
-    def _perform_search(self, search_term: str) -> List[AniListMedia]:
-        """
-        Perform the actual search for a manga on AniList.
-
-        This method executes a GraphQL query to search for manga matching the
-        given search term. Results are sorted by search relevance.
-
-        Args:
-            search_term: The manga title to search for
-
-        Returns:
-            A list of AniListMedia objects matching the search term.
-            Returns an empty list if no results are found or an error occurs.
-
-        Examples:
-            >>> provider._perform_search("One Piece")
-            [AniListMedia(id=30013, title=...), ...]
-
-        Note:
-            This method is called by the parent class's search() method,
-            which handles caching. Direct calls will bypass the cache.
-        """
-        query = gql("""
-            query ($search: String, $type: MediaType, $perPage: Int) {
-                Page (perPage: $perPage) {
-                    media(search: $search, type: $type, sort: [SEARCH_MATCH]) {
-                        id
-                        title {
-                            romaji
-                            english
-                            native
-                        }
-                        description(asHtml: false)
-                        status
-                        genres
-                        staff {
-                            edges {
-                                role
-                                node {
-                                    name {
-                                        full
-                                    }
-                                }
-                            }
-                        }
-                        popularity
-                        averageScore
-                        siteUrl
-                        tags {
-                            name
-                            rank
-                        }
-                        isAdult
-                        coverImage {
-                            extraLarge
-                            large
-                            medium
-                        }
-                    }
-                }
-            }
-        """)
-
-        params = {
-            "search": search_term,
-            "type": "MANGA",
-            "perPage": ANILIST_SEARCH_RESULTS_PER_PAGE
-        }
-
+    def _execute(self, query_text: str, params: dict) -> dict:
         try:
-            logger.info(f"Searching AniList for manga: '{search_term}'")
-            result = self.client.execute(query, variable_values=params)
+            return self.client.execute(gql(query_text), variable_values=params)
+        except TransportQueryError as exc:
+            raise MetadataProviderError(f"AniList GraphQL query failed: {exc}") from exc
+        except Exception as exc:
+            raise MetadataProviderError(f"AniList request failed: {exc}") from exc
 
-            logger.debug(f"Raw AniList response for '{search_term}': {result}")
+    def _perform_search(self, search_term: str) -> List[MetadataCandidate]:
+        result = self._execute(
+            """
+            query ($search: String, $perPage: Int) {
+              Page(perPage: $perPage) {
+                media(search: $search, type: MANGA, sort: [SEARCH_MATCH]) {
+                  id title { romaji english native } synonyms isAdult popularity
+                  startDate { year } format
+                }
+              }
+            }
+            """,
+            {"search": search_term, "perPage": ANILIST_SEARCH_RESULTS_PER_PAGE},
+        )
+        items = ((result.get("Page") or {}).get("media") or [])
+        candidates = []
+        for item in items:
+            titles = _titles(item)
+            if not titles:
+                continue
+            candidates.append(MetadataCandidate(
+                provider="anilist",
+                external_id=str(item["id"]),
+                titles=titles,
+                adult=bool(item.get("isAdult")),
+                popularity=item.get("popularity") or 0,
+                year=str((item.get("startDate") or {}).get("year") or "") or None,
+                media_type=item.get("format"),
+            ))
+        return candidates
 
-            if result and result.get('Page') and result['Page'].get('media'):
-                media_list = result['Page']['media']
-
-                # Limit the number of staff edges to ANILIST_STAFF_MAX
-                for media_item in media_list:
-                    if 'staff' in media_item and media_item['staff'] and 'edges' in media_item['staff']:
-                        media_item['staff']['edges'] = media_item['staff']['edges'][:ANILIST_STAFF_MAX]
-
-                validated_media = []
-
-                # Validate each media item individually to avoid losing all results
-                # if one item is malformed
-                for media_item in media_list:
-                    try:
-                        validated_media.append(AniListMedia.model_validate(media_item))
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to validate media item from AniList response: {e}. "
-                            f"Skipping this result."
-                        )
-
-                logger.info(f"Found {len(validated_media)} valid results for '{search_term}'")
-                return validated_media
-            else:
-                logger.warning(f"No results found on AniList for '{search_term}'")
-                return []
-
-        except TransportQueryError as e:
-            # GraphQL-specific errors (e.g., rate limiting, query syntax errors)
-            logger.error(
-                f"GraphQL error while querying AniList for '{search_term}': {e}. "
-                f"This may indicate rate limiting or an API issue."
-            )
-            raise MetadataProviderError(f"AniList GraphQL query failed: {e}") from e
-        except Exception as e:
-            # Catch-all for network errors, timeouts, etc.
-            logger.error(
-                f"Unexpected error while querying AniList for '{search_term}': {e}",
-                exc_info=True
-            )
-            raise MetadataProviderError(f"AniList search failed: {e}") from e
+    def _perform_get_metadata(self, external_id: str) -> MetadataRecord:
+        try:
+            media_id = int(external_id)
+        except ValueError as exc:
+            raise MetadataProviderError(f"Invalid AniList ID: {external_id}") from exc
+        result = self._execute(
+            """
+            query ($id: Int) {
+              Media(id: $id, type: MANGA) {
+                id title { romaji english native } synonyms description(asHtml: false)
+                status genres popularity averageScore siteUrl isAdult format startDate { year }
+                staff { edges { role node { name { full } } } }
+                coverImage { extraLarge large medium }
+              }
+            }
+            """,
+            {"id": media_id},
+        )
+        item = result.get("Media")
+        if not item:
+            raise MetadataProviderError(f"AniList manga {external_id} was not found")
+        creators = []
+        for edge in ((item.get("staff") or {}).get("edges") or []):
+            role = (edge.get("role") or "").lower()
+            name = (((edge.get("node") or {}).get("name") or {}).get("full"))
+            if not name:
+                continue
+            if "story" in role:
+                creators.append(MetadataCreator(name=name, role="writer"))
+            if "art" in role and "touch-up art" not in role:
+                creators.append(MetadataCreator(name=name, role="penciller"))
+        cover = item.get("coverImage") or {}
+        genres = item.get("genres") or []
+        return MetadataRecord(
+            provider="anilist",
+            external_id=str(item["id"]),
+            titles=_titles(item),
+            adult=bool(item.get("isAdult")),
+            popularity=item.get("popularity") or 0,
+            year=str((item.get("startDate") or {}).get("year") or "") or None,
+            media_type=item.get("format"),
+            description=item.get("description"),
+            description_language="en" if item.get("description") else None,
+            status=STATUS_MAP.get(item.get("status")),
+            genres=genres,
+            genre_languages={genre: "en" for genre in genres},
+            creators=creators,
+            score=item.get("averageScore"),
+            site_url=item.get("siteUrl"),
+            cover_urls=_unique_strings([cover.get("extraLarge"), cover.get("large"), cover.get("medium")]),
+        )

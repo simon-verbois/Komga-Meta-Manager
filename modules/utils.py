@@ -41,6 +41,18 @@ def clean_html(raw_html: str) -> str:
     return text.strip()
 
 
+def clean_description(raw_text: str) -> str:
+    """Convert the lightweight HTML/Markdown returned by providers to plain text."""
+    text = clean_html(raw_text)
+    text = re.sub(r'!\[([^]]*)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r'\[([^]]+)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r'(?m)^\s{0,3}#{1,6}\s*', '', text)
+    text = re.sub(r'(?m)^\s*>\s?', '', text)
+    text = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', text)
+    text = re.sub(r'[*_`~]+', '', text)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
 class FrameFormatter(logging.Formatter):
     def format(self, record):
         formatted = super().format(record)

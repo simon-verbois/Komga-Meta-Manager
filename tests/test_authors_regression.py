@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from modules.models import AniListMedia, KomgaBook
+from modules.models import MetadataRecord, KomgaBook
 from modules.processor import _update_authors
 
 
@@ -31,18 +31,12 @@ def test_author_replacement_behavior_is_preserved(app_config) -> None:
             },
         }
     )
-    match = AniListMedia.model_validate(
+    match = MetadataRecord.model_validate(
         {
-            "id": 1,
-            "title": {"romaji": "Example Manga"},
-            "staff": {
-                "edges": [
-                    {
-                        "role": "Story",
-                        "node": {"name": {"full": "New Writer"}},
-                    }
-                ]
-            },
+            "provider": "anilist",
+            "external_id": "1",
+            "titles": ["Example Manga"],
+            "creators": [{"name": "New Writer", "role": "writer"}],
         }
     )
     komga = Mock()
@@ -54,4 +48,3 @@ def test_author_replacement_behavior_is_preserved(app_config) -> None:
         "book-1",
         {"authors": [{"name": "New Writer", "role": "writer"}]},
     )
-

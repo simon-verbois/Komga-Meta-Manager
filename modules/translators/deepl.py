@@ -7,33 +7,12 @@ import json
 import backoff
 from pathlib import Path
 import deepl
-import yaml
-from .base import Translator
+from .base import Translator, base_language, languages_match
 from ..config import DeepLConfig
-from modules.constants import (
-    TRANSLATIONS_CONFIG_FILE,
-    CACHE_SAVE_INTERVAL
-)
+from modules.constants import CACHE_SAVE_INTERVAL
 from modules.cache_naming import get_translation_cache_filename
 
 logger = logging.getLogger(__name__)
-
-def load_manual_translations() -> dict:
-    """Loads the manual translations YAML file if it exists."""
-    try:
-        with open(TRANSLATIONS_CONFIG_FILE, "r", encoding="utf-8") as f:
-            translations = yaml.safe_load(f)
-            if isinstance(translations, dict):
-                logger.info(f"Successfully loaded manual translations from {TRANSLATIONS_CONFIG_FILE}")
-                return translations
-            logger.warning("Manual translations file is not a valid dictionary. Ignoring.")
-    except FileNotFoundError:
-        logger.info(f"No manual translations file found at '{TRANSLATIONS_CONFIG_FILE}', skipping.")
-    except Exception as e:
-        logger.error(f"Failed to load or parse manual translations file: {e}")
-    return {}
-
-MANUAL_TRANSLATIONS = load_manual_translations()
 
 class DeepLTranslator(Translator):
     """A translator using the official DeepL API."""
@@ -122,32 +101,39 @@ class DeepLTranslator(Translator):
         else:
             logger.info("No translation lookups performed in this session.")
 
-    def translate(self, text: str, target_language: str) -> str:
+    def translate(
+        self,
+        text: str,
+        target_language: str,
+        source_language: str | None = None,
+    ) -> str:
         """
         Translates text, using a multi-layered cache approach.
         """
         if not self.translator or not text:
             return text
 
-        # Layer 1: Manual Translations
-        for language_key in (target_language, target_language.lower(), target_language.split('-')[0].lower()):
-            if language_key in MANUAL_TRANSLATIONS and text in MANUAL_TRANSLATIONS[language_key]:
-                manual_translation = MANUAL_TRANSLATIONS[language_key][text]
-                logger.debug(f"Using manual translation for '{text}' -> '{manual_translation}'")
-                return manual_translation
+        if languages_match(source_language, target_language):
+            logger.debug(
+                "Skipping translation because source language '%s' already matches target language '%s'.",
+                source_language,
+                target_language,
+            )
+            return text
 
-        # Layer 2: Persistent Cache
-        cache_key = f"{target_language}:{text}"
+        # Layer 1: Persistent Cache
+        source = base_language(source_language) or "auto"
+        cache_key = f"v2:{source}:{target_language}:{text}"
         if cache_key in self.cache:
             self.cache_hits += 1
             logger.debug(f"Cache hit for '{text}' -> '{self.cache[cache_key]}'")
             return self.cache[cache_key]
 
-        # Layer 3: API Call
+        # Layer 2: API Call
         self.cache_misses += 1
         logger.debug(f"Cache miss for '{text}'. Calling translation API.")
         try:
-            translated_text = self._translate_with_retry(text, target_language)
+            translated_text = self._translate_with_retry(text, target_language, source_language)
             self.cache[cache_key] = translated_text
             self.unsaved_changes += 1
             self._autosave_cache()  # Periodic save
@@ -174,9 +160,17 @@ class DeepLTranslator(Translator):
                           max_tries=3,
                           giveup=is_not_retryable,
                           logger=logger)
-    def _translate_with_retry(self, text: str, target_language: str) -> str:
+    def _translate_with_retry(
+        self,
+        text: str,
+        target_language: str,
+        source_language: str | None = None,
+    ) -> str:
         """
         Protected method that performs the translation and is decorated for retries.
         """
-        result = self.translator.translate_text(text, target_lang=target_language)
+        kwargs = {"target_lang": target_language}
+        if source := base_language(source_language):
+            kwargs["source_lang"] = source.upper()
+        result = self.translator.translate_text(text, **kwargs)
         return result.text

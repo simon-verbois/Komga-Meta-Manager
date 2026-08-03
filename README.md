@@ -5,14 +5,15 @@
 
 # Komga Meta Manager
 
-Komga Meta Manager enriches Komga manga metadata from AniList, with optional translation, persistent caches, scheduled runs and discovery of newly added series.
+Komga Meta Manager enriches Komga manga metadata from AniList, MangaDex or MangaUpdates, with optional translation, persistent caches, scheduled runs and discovery of newly added series.
 
 ## Features
 
-- AniList title matching with configurable confidence threshold
-- Summary, genres, status, authors, score tag, AniList link and cover management
+- AniList, MangaDex and MangaUpdates metadata providers
+- Multilingual and alternate-title matching with configurable confidence threshold
+- Summary, original publisher, genres, status, authors, score tag, provider link and cover management
 - Safe dry-run mode and granular update/removal flags
-- Google Translate or DeepL translation with manual overrides
+- Google Translate or DeepL translation with persistent caching
 - Daily scheduler and new-series watcher
 - Docker, Compose and Kubernetes deployment
 
@@ -37,12 +38,48 @@ Environment variables take priority over YAML values.
 
 ## Processing behavior
 
-- `overwrite_existing: false` fills empty scalar fields. Score tags and AniList links are merged with existing values.
+- `overwrite_existing: false` fills empty scalar fields, including the original publisher supplied by MangaUpdates. Score tags and provider links are merged with existing values.
+- Publisher selection keeps MangaUpdates entries marked `Original`, ignores translated licensees, and joins multiple original publishers with a comma.
 - `force_unlock: false` preserves locked metadata.
 - Every `remove_fields` flag defaults to `false`; removal is always explicit.
+- `remove_fields.language: true` clears the language stored on each series.
+- `remove_fields.reading_direction: true` clears the reading direction stored on each series.
 - Covers are added only when no user-uploaded cover exists, unless `overwrite_existing` is enabled.
 - Replacing a cover never deletes previous uploads. Explicit cover removal deletes only `USER_UPLOADED` thumbnails.
-- AniList adult results are excluded from automatic matching.
+- Adult results are excluded from matching unless `allow_adult` is enabled for that provider.
+  MangaDex ratings `erotica` and `pornographic` are both treated as adult.
+- Link updates synchronize AniList, MangaDex and MangaUpdates links for every provider that matched, while preserving third-party links. Link removal deletes all three managed links.
+
+## Metadata providers and matching
+
+All providers are active. They are searched by ascending priority; when the first match lacks an enabled metadata field, the next provider fills that field without replacing higher-priority data:
+
+```yaml
+providers:
+  - name: "anilist"
+    priority: 1
+    min_score: 80
+    allow_adult: false
+    preferred_language: "en"
+    cache:
+      ttl_hours: 168
+  - name: "mangadex"
+    priority: 2
+    min_score: 80
+    allow_adult: false
+    preferred_language: "en"
+    cache:
+      ttl_hours: 168
+  - name: "mangaupdates"
+    priority: 3
+    min_score: 80
+    allow_adult: false
+    preferred_language: "en"
+    cache:
+      ttl_hours: 168
+```
+
+The matcher uses the edited Komga metadata title first and falls back to the series name. It compares every title and alias returned by the provider; exact normalized matches take priority, then a conservative fuzzy score and provider popularity decide the result. A short title occurring inside a longer, different title is not considered a strong match.
 
 The process exits with a non-zero status when configuration, initialization or a run-once processing operation fails. Scheduled mode stays alive after an individual failed run and reports the failure in logs.
 

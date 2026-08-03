@@ -16,7 +16,7 @@ from typing import Optional
 from modules.config import load_config, AppConfig
 from modules.processor import ProcessingResult, process_libraries, watch_for_new_series
 from modules.komga_client import KomgaClient
-from modules.providers import get_provider
+from modules.providers import get_providers
 from modules.translators import get_translator
 from modules.scheduler import Scheduler
 from modules.utils import FrameFormatter, log_frame
@@ -192,7 +192,7 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
     cache_dir = Path("/config/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    components.metadata_provider = get_provider(config.provider, cache_dir)
+    components.metadata_provider = get_providers(config.providers, cache_dir)
     if not components.metadata_provider:
         logging.error("Failed to initialize provider for watcher. Watcher will be disabled.")
         return components
@@ -235,7 +235,7 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
     logger.info("Watcher: Performing initial series check...")
     has_processed = watch_for_new_series(
         config, components.komga_client, components.target_libraries,
-        components.known_series, components.metadata_provider, components.translator
+        components.known_series, components.metadata_provider, components.translator,
     )
     components.last_poll_time = time.monotonic()  # Set after first check
     components.initialized = True
@@ -258,7 +258,7 @@ def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponen
     has_processed = watch_for_new_series(
         config, watcher_components.komga_client,
         watcher_components.target_libraries, watcher_components.known_series,
-        watcher_components.metadata_provider, watcher_components.translator
+        watcher_components.metadata_provider, watcher_components.translator,
     )
 
     if has_processed:

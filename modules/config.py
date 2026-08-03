@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "/config/config.yml"
+SUPPORTED_METADATA_PROVIDERS = ("anilist", "mangadex", "mangaupdates")
 
 class SchedulerConfig(BaseModel):
     """Pydantic model for scheduler settings."""
@@ -55,16 +56,35 @@ class CacheConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """Pydantic model for metadata provider settings."""
     name: str = "anilist"
+    priority: int = Field(default=1, ge=1)
     min_score: int = Field(default=80, ge=0, le=100)
+    allow_adult: bool = False
+    preferred_language: str = Field(default="en", min_length=2)
     cache: CacheConfig = Field(default_factory=CacheConfig)
 
     @field_validator('name')
     @classmethod
     def validate_provider(cls, value: str) -> str:
         provider = value.strip().lower()
-        if provider != 'anilist':
-            raise ValueError("provider.name must be 'anilist'")
+        if provider not in SUPPORTED_METADATA_PROVIDERS:
+            raise ValueError("provider name must be 'anilist', 'mangadex' or 'mangaupdates'")
         return provider
+
+    @field_validator('preferred_language')
+    @classmethod
+    def normalize_preferred_language(cls, value: str) -> str:
+        normalized = value.strip().replace('_', '-').lower()
+        if len(normalized) < 2:
+            raise ValueError("providers.preferred_language must not be empty")
+        return normalized
+
+
+def default_providers() -> List[ProviderConfig]:
+    """Return every metadata provider in the default fallback order."""
+    return [
+        ProviderConfig(name=name, priority=priority)
+        for priority, name in enumerate(SUPPORTED_METADATA_PROVIDERS, start=1)
+    ]
 
 class AuthorsConfig(BaseModel):
     """Pydantic model for granular author configuration."""
@@ -85,6 +105,9 @@ class RemoveAuthorsConfig(BaseModel):
 class RemoveFlags(BaseModel):
     """Metadata removal flags with safe, non-destructive defaults."""
     summary: bool = False
+    publisher: bool = False
+    language: bool = False
+    reading_direction: bool = False
     genres: bool = False
     status: bool = False
     authors: RemoveAuthorsConfig = Field(default_factory=RemoveAuthorsConfig)
@@ -95,6 +118,7 @@ class RemoveFlags(BaseModel):
 class UpdateFlags(BaseModel):
     """Pydantic model for granular update control."""
     summary: bool = True
+    publisher: bool = True
     genres: bool = True
     status: bool = True
     authors: AuthorsConfig = Field(default_factory=AuthorsConfig)
@@ -114,7 +138,7 @@ class ProcessingConfig(BaseModel):
     def enforce_remove_priority(self):
         """Enforce that if remove_fields is true for a field, update_fields is automatically set to false."""
         # Simple field mappings
-        simple_fields = ['summary', 'genres', 'status', 'cover_image', 'link']
+        simple_fields = ['summary', 'publisher', 'genres', 'status', 'cover_image', 'link']
 
         for field in simple_fields:
             remove_val = getattr(self.remove_fields, field, False)
@@ -176,9 +200,33 @@ class AppConfig(BaseModel):
     """Root Pydantic model for the application configuration."""
     system: SystemConfig = Field(default_factory=SystemConfig)
     komga: KomgaConfig
-    provider: ProviderConfig = Field(default_factory=ProviderConfig)
+    providers: List[ProviderConfig] = Field(default_factory=default_providers)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     translation: Optional[TranslationConfig] = None
+
+    @field_validator('providers')
+    @classmethod
+    def validate_providers(cls, providers: List[ProviderConfig]) -> List[ProviderConfig]:
+        """Require all supported providers with unique priorities."""
+        names = [provider.name for provider in providers]
+        priorities = [provider.priority for provider in providers]
+        expected = set(SUPPORTED_METADATA_PROVIDERS)
+
+        if len(names) != len(set(names)):
+            raise ValueError('providers must not contain duplicate names')
+        if set(names) != expected:
+            missing = sorted(expected - set(names))
+            unknown = sorted(set(names) - expected)
+            details = []
+            if missing:
+                details.append(f"missing: {', '.join(missing)}")
+            if unknown:
+                details.append(f"unknown: {', '.join(unknown)}")
+            raise ValueError(f"providers must contain all supported providers ({'; '.join(details)})")
+        if len(priorities) != len(set(priorities)):
+            raise ValueError('providers must have unique priorities')
+
+        return sorted(providers, key=lambda provider: provider.priority)
 
 def load_config(path: str = CONFIG_PATH) -> AppConfig:
     """

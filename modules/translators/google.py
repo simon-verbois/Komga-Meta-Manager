@@ -6,52 +6,14 @@ import asyncio
 import inspect
 import logging
 import backoff
-import yaml
 import json
 from pathlib import Path
 from googletrans import Translator as GoogletransTranslator, LANGUAGES
-from .base import Translator
-from modules.constants import (
-    TRANSLATIONS_CONFIG_FILE,
-    CACHE_SAVE_INTERVAL
-)
+from .base import Translator, base_language, languages_match
+from modules.constants import CACHE_SAVE_INTERVAL
 from modules.cache_naming import get_translation_cache_filename
 
 logger = logging.getLogger(__name__)
-
-def load_manual_translations() -> dict:
-    """
-    Load manual translations from the YAML configuration file.
-
-    Reads the translations.yml file in the config directory to provide
-    user-defined translations that take precedence over automatic translation.
-
-    Returns:
-        A dictionary mapping language codes to translation mappings.
-        Returns an empty dict if the file doesn't exist or fails to load.
-
-    Examples:
-        File content:
-        fr:
-          "Action": "Action"
-          "Romance": "Romance"
-
-        Returns: {'fr': {'Action': 'Action', 'Romance': 'Romance'}}
-    """
-    try:
-        with open(TRANSLATIONS_CONFIG_FILE, "r", encoding="utf-8") as f:
-            translations = yaml.safe_load(f)
-            if isinstance(translations, dict):
-                logger.info(f"Successfully loaded manual translations from {TRANSLATIONS_CONFIG_FILE}")
-                return translations
-            logger.warning("Manual translations file is not a valid dictionary. Ignoring.")
-    except FileNotFoundError:
-        logger.info(f"No manual translations file found at '{TRANSLATIONS_CONFIG_FILE}', skipping.")
-    except Exception as e:
-        logger.error(f"Failed to load or parse manual translations file: {e}")
-    return {}
-
-MANUAL_TRANSLATIONS = load_manual_translations()
 
 def is_not_retryable(e):
     return False
@@ -60,9 +22,7 @@ class GoogleTranslator(Translator):
     """
     A translator using the unofficial Google Translate API with smart caching.
 
-    This translator implements a two-tier caching strategy:
-    1. Manual overrides from translations.yml (highest priority)
-    2. Automatic translations from Google Translate (with persistent disk cache)
+    This translator caches automatic translations from Google Translate on disk.
 
     The disk cache is automatically saved periodically to prevent data loss,
     and provides significant API call savings for repeated translations.
@@ -175,14 +135,18 @@ class GoogleTranslator(Translator):
         else:
             logger.info("No translation lookups performed in this session.")
 
-    def translate(self, text: str, target_language: str) -> str:
+    def translate(
+        self,
+        text: str,
+        target_language: str,
+        source_language: str | None = None,
+    ) -> str:
         """
-        Translate text using multi-layered caching strategy.
+        Translate text using a persistent cache.
 
         Translation priority:
-        1. Manual overrides from translations.yml (if available)
-        2. Persistent cache from disk (if previously translated)
-        3. Google Translate API (with automatic caching)
+        1. Persistent cache from disk (if previously translated)
+        2. Google Translate API (with automatic caching)
 
         Args:
             text: The text to translate
@@ -201,12 +165,13 @@ class GoogleTranslator(Translator):
         if not self.translator or not text:
             return text
 
-        # Check manual translations first (highest priority)
-        for language_key in (target_language, target_language.lower(), target_language.split('-')[0].lower()):
-            if language_key in MANUAL_TRANSLATIONS and text in MANUAL_TRANSLATIONS[language_key]:
-                manual_translation = MANUAL_TRANSLATIONS[language_key][text]
-                logger.debug(f"Using manual translation for '{text}' -> '{manual_translation}'")
-                return manual_translation
+        if languages_match(source_language, target_language):
+            logger.debug(
+                "Skipping translation because source language '%s' already matches target language '%s'.",
+                source_language,
+                target_language,
+            )
+            return text
 
         # Validate language support
         if target_language not in LANGUAGES:
@@ -214,7 +179,8 @@ class GoogleTranslator(Translator):
             return text
             
         # Check persistent cache
-        cache_key = f"{target_language}:{text}"
+        source = base_language(source_language) or "auto"
+        cache_key = f"v2:{source}:{target_language}:{text}"
         if cache_key in self.cache:
             self.cache_hits += 1
             logger.debug(f"Cache hit for '{text}' -> '{self.cache[cache_key]}'")
@@ -225,7 +191,7 @@ class GoogleTranslator(Translator):
         logger.debug(f"Cache miss for '{text}'. Calling translation API.")
         
         try:
-            translated_text = self._translate_with_retry(text, target_language)
+            translated_text = self._translate_with_retry(text, target_language, source_language)
             self.cache[cache_key] = translated_text
             self.unsaved_changes += 1
             self._autosave_cache()  # Periodic save
@@ -239,11 +205,19 @@ class GoogleTranslator(Translator):
                           max_tries=3,
                           giveup=is_not_retryable,
                           logger=logger)
-    def _translate_with_retry(self, text: str, target_language: str) -> str:
+    def _translate_with_retry(
+        self,
+        text: str,
+        target_language: str,
+        source_language: str | None = None,
+    ) -> str:
         """
         Protected method that performs the translation and is decorated for retries.
         """
-        translated = self.translator.translate(text, dest=target_language)
+        kwargs = {"dest": target_language}
+        if source := base_language(source_language):
+            kwargs["src"] = source
+        translated = self.translator.translate(text, **kwargs)
         # googletrans 4.0.2 exposes an async API. Keep the application's public
         # Translator interface synchronous because all processing is sequential.
         if inspect.isawaitable(translated):

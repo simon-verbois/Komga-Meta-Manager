@@ -70,10 +70,6 @@ spec:
           mountPath: /config/config.yml
           subPath: config.yml
           readOnly: true
-        - name: config-volume
-          mountPath: /config/translations.yml
-          subPath: translations.yml
-          readOnly: true
         - name: cache-volume
           mountPath: /config/cache
         - name: runtime-volume
