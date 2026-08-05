@@ -2,19 +2,11 @@
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <version> (example: $0 2026.32.1)" >&2
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "Not inside a Git repository." >&2
   exit 1
-fi
+}
 
-version="$1"
-if [[ ! "$version" =~ ^[0-9]{4}\.([1-9]|[1-4][0-9]|5[0-3])\.[1-9][0-9]*$ ]]; then
-  echo "Invalid version: '$1' (expected YYYY.WEEK.ID, for example 2026.32.1)" >&2
-  exit 1
-fi
-
-tag="$version"
-repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 branch="$(git symbolic-ref --quiet --short HEAD)" || {
@@ -22,18 +14,72 @@ branch="$(git symbolic-ref --quiet --short HEAD)" || {
   exit 1
 }
 
-git remote get-url origin >/dev/null
+git remote get-url origin >/dev/null 2>&1 || {
+  echo "Git remote 'origin' does not exist." >&2
+  exit 1
+}
+
+# Année et semaine ISO depuis les outils locaux.
+# %G = année correspondant à la semaine ISO
+# %V = numéro de semaine ISO, de 01 à 53
+year="$(date +%G)"
+week_raw="$(date +%V)"
+
+if [[ ! "$year" =~ ^[0-9]{4}$ ]] ||
+   [[ ! "$week_raw" =~ ^(0[1-9]|[1-4][0-9]|5[0-3])$ ]]; then
+  echo "Unable to determine the current ISO year and week." >&2
+  exit 1
+fi
+
+# Supprime le zéro initial : 08 devient 8.
+week="$((10#$week_raw))"
+
+local_tags="$(git tag --list)"
+
+remote_tags="$(
+  git ls-remote --tags --refs origin |
+    awk '{
+      sub(/^refs\/tags\//, "", $2)
+      print $2
+    }'
+)"
+
+max_id=0
+
+while IFS= read -r existing_tag; do
+  [[ -z "$existing_tag" ]] && continue
+
+  if [[ "$existing_tag" =~ ^${year}\.${week}\.([1-9][0-9]*)$ ]]; then
+    current_id="$((10#${BASH_REMATCH[1]}))"
+
+    if (( current_id > max_id )); then
+      max_id="$current_id"
+    fi
+  fi
+done < <(
+  printf '%s\n%s\n' "$local_tags" "$remote_tags" |
+    sort -u
+)
+
+next_id=$((max_id + 1))
+tag="${year}.${week}.${next_id}"
 
 if git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
   echo "Tag ${tag} already exists locally." >&2
   exit 1
 fi
 
-printf '%s\n' "$version" > VERSION
+echo "Creating release ${tag} from branch ${branch}."
+
+printf '%s\n' "$tag" > VERSION
 
 git add -A
 git commit -m "Release ${tag}"
 git tag -a "$tag" -m "Release ${tag}"
-git push --atomic origin "HEAD:refs/heads/${branch}" "refs/tags/${tag}"
+
+git push --atomic \
+  origin \
+  "HEAD:refs/heads/${branch}" \
+  "refs/tags/${tag}"
 
 echo "Release ${tag} pushed to origin from branch ${branch}."
