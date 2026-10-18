@@ -39,7 +39,9 @@ jobs:
           python -c "from pathlib import Path; import yaml; [list(yaml.safe_load_all(path.read_text())) for path in Path('k8s-manifest').glob('*.yaml')]"
 
       - name: Build container
-        run: docker build --pull=false --tag komga-meta-manager:ci .
+        env:
+          BUILD_REVISION: ${{ forge.sha }}
+        run: docker build --pull=false --build-arg BUILD_VERSION="$(cat VERSION)" --build-arg BUILD_REVISION="$BUILD_REVISION" --tag komga-meta-manager:ci .
 
   release:
     needs: quality
@@ -63,15 +65,38 @@ jobs:
             exit 1
           fi
 
+      - name: Verify release changelog
+        env:
+          RELEASE_TAG: ${{ forge.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          version = os.environ["RELEASE_TAG"]
+          if not re.fullmatch(r"\d{4}\.(?:[1-9]|[1-4]\d|5[0-3])\.[1-9]\d*", version):
+              raise SystemExit("Release tags must use YYYY.W.N; use scripts/release.sh.")
+          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          heading = re.search(rf"^## \[{re.escape(version)}\] — \d{{4}}-\d{{2}}-\d{{2}}$", text, re.M)
+          if heading is None:
+              raise SystemExit(f"CHANGELOG.md has no dated section for {version}; use scripts/release.sh.")
+          notes = re.split(r"^## \[", text[heading.end():], maxsplit=1, flags=re.M)[0]
+          if not re.search(r"^- \S", notes, re.M):
+              raise SystemExit(f"CHANGELOG.md has no release notes for {version}.")
+          PY
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: simonverbois/komga-meta-manager
           tags: |
-            type=semver,pattern={{version}}
+            type=raw,value=${{ forge.ref_name }}
+            type=raw,value=latest
           labels: |
             org.opencontainers.image.version=${{ forge.ref_name }}
+            org.opencontainers.image.licenses=MIT
             org.opencontainers.image.revision=${{ forge.sha }}
             org.opencontainers.image.source=https://github.com/simon-verbois/Komga-Meta-Manager
             org.opencontainers.image.url=https://github.com/simon-verbois/Komga-Meta-Manager
@@ -101,5 +126,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            BUILD_VERSION=${{ forge.ref_name }}
+            BUILD_REVISION=${{ forge.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

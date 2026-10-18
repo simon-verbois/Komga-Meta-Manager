@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.nav.translation') }} — KMM{% endblock %}
+{% block content %}
+{% set tr = (cfg.get('translation') or {}) %}
+{% set deepl = (tr.get('deepl') or {}) %}
+
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <h1 class="text-xl font-bold">{{ t('config.title') }} — {{ t('config.nav.translation') }}</h1>
+    {% include "partials/config_nav.html" %}
+  </div>
+
+  {% include "partials/config_alerts.html" %}
+
+  <form method="post" action="/config/translation" class="space-y-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="enabled" value="1" id="tr-enabled"
+               {% if tr.get('enabled', False) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-indigo-500 w-4 h-4"
+               onchange="document.getElementById('tr-opts').classList.toggle('hidden', !this.checked)" />
+        <span class="text-sm text-gray-200">{{ t('config.translation.enabled') }}</span>
+      </label>
+
+      <div id="tr-opts" class="space-y-5 {% if not tr.get('enabled', False) %}hidden{% endif %}">
+
+        <!-- Provider -->
+        <div>
+          <label class="block text-sm text-gray-300 mb-1">{{ t('config.translation.provider') }}</label>
+          <select name="provider" id="tr-provider"
+                  onchange="document.getElementById('deepl-section').classList.toggle('hidden', this.value !== 'deepl')"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="google" {% if tr.get('provider', 'google') == 'google' %}selected{% endif %}>{{ t('config.translation.google') }}</option>
+            <option value="deepl" {% if tr.get('provider') == 'deepl' %}selected{% endif %}>DeepL</option>
+          </select>
+        </div>
+
+        <!-- Target language -->
+        <div>
+          <label class="block text-sm text-gray-300 mb-1">{{ t('config.translation.language') }}</label>
+          <input type="text" name="target_language"
+                 value="{{ tr.get('target_language', 'EN-US') }}"
+                 placeholder="EN-US"
+                 class="w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <p class="text-xs text-gray-500 mt-1">{{ t('config.translation.language.help') }}</p>
+        </div>
+
+        <!-- DeepL API key -->
+        <div id="deepl-section" {% if tr.get('provider', 'google') != 'deepl' %}class="hidden"{% endif %}>
+          <label class="block text-sm text-gray-300 mb-1">{{ t('config.translation.deepl_key') }}</label>
+          <div class="flex gap-2">
+            <input type="password" name="deepl_api_key" id="deepl-key"
+                   value="{{ deepl.get('api_key', '') }}"
+                   class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+            <button type="button"
+                    onclick="toggleSecret('deepl-key', this)"
+                    class="px-3 py-2 text-xs border border-gray-700 rounded-lg text-gray-400
+                           hover:text-white transition-colors">
+              {{ t('common.show') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg
+                     text-sm font-medium transition-colors">
+        {{ t('config.save') }}
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+function toggleSecret(id, btn) {
+  const input = document.getElementById(id);
+  input.type = input.type === 'password' ? 'text' : 'password';
+  btn.textContent = input.type === 'password' ? {{ t('common.show') | tojson }} : {{ t('common.hide') | tojson }};
+}
+</script>
+{% endblock %}

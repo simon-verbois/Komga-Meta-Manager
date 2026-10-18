@@ -1,6 +1,6 @@
 # Kubernetes deployment
 
-These manifests deploy one Komga Meta Manager scheduler/watcher pod with persistent caches and secrets separated from the ConfigMap.
+These manifests deploy Komga Meta Manager with its Web UI, scheduler/watcher, persistent storage, and Kubernetes Service.
 
 ## Prerequisites
 
@@ -10,30 +10,35 @@ These manifests deploy one Komga Meta Manager scheduler/watcher pod with persist
 
 ## Configuration
 
-1. Adjust `01-pvc.yaml`, especially `storageClassName`.
-2. Adjust the Komga URL, libraries and processing options in `02-configmap.yaml`.
-3. Create the untracked Secret manifest:
+1. Adjust `01-pvc.yaml`, especially `storageClassName`. The PVC is mounted at `/config` to persist `webui.db` and the metadata cache across pod restarts.
+2. Configure API keys directly in the Web UI. For a legacy YAML import only, you can optionally create secrets injected as environment variables:
 
 ```bash
 cp 04-secret.yaml.template 04-secret.yaml
 $EDITOR 04-secret.yaml
 ```
 
-`komga-api-key` is required. Remove `deepl-api-key` when translation is disabled or Google Translate is selected. Never commit `04-secret.yaml`.
+`komga-api-key` and `deepl-api-key` can also be entered directly in the Web UI.
 
 ## Deployment
 
 ```bash
 kubectl apply -f 00-namespace.yaml
 kubectl apply -f 01-pvc.yaml
-kubectl apply -f 02-configmap.yaml
-kubectl apply -f 04-secret.yaml
+# Optional, for legacy migration: kubectl apply -f 04-secret.yaml
 kubectl apply -f 03-deployment.yaml
+kubectl apply -f 05-service.yaml
 
 kubectl get pods -n komga-meta-manager
 kubectl logs -f deployment/komga-meta-manager -n komga-meta-manager
 ```
 
-The startup and readiness probes become successful only after configuration and continuous-mode initialization complete. A watcher-only deployment exits when its initial Komga connection fails; scheduler mode remains available if only watcher initialization fails.
+Access the Web UI at port 8765 via Port-Forward or Ingress:
 
-The image runs as UID/GID 1000 with a read-only root filesystem. `/config/cache` is backed by the PVC and `/tmp` by an ephemeral volume.
+```bash
+kubectl port-forward -n komga-meta-manager svc/komga-meta-manager 8765:8765
+```
+
+Navigate to `http://localhost:8765` to create the administrator account and configure settings.
+
+The image runs as UID/GID 1000 with a read-only root filesystem. `/config` is backed by the PVC and `/tmp` by an ephemeral volume.

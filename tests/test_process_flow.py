@@ -155,6 +155,35 @@ def test_process_libraries_reports_series_failure(series, app_config) -> None:
     assert result.failed == 1
 
 
+def test_process_libraries_only_reads_enabled_libraries(series, app_config) -> None:
+    client = Mock()
+    client.get_libraries.return_value = [
+        KomgaLibrary(id="library-1", name="Manga"),
+        KomgaLibrary(id="library-2", name="Comics"),
+    ]
+    client.get_series_in_library.return_value = [series]
+    with (
+        patch("modules.processor.Path.mkdir"),
+        patch("modules.processor.KomgaClient", return_value=client),
+        patch("modules.processor.get_providers", return_value=Mock()),
+        patch("modules.processor.process_single_series") as process,
+    ):
+        assert process_libraries(app_config).processed == 1
+    client.get_series_in_library.assert_called_once_with("library-1", "Manga")
+    process.assert_called_once()
+
+
+def test_all_libraries_disabled_is_successful_without_external_calls(app_config) -> None:
+    app_config.komga.libraries = []
+    with (
+        patch("modules.processor.KomgaClient") as client,
+        patch("modules.processor.get_providers") as providers,
+    ):
+        assert process_libraries(app_config) == ProcessingResult(success=True)
+    client.assert_not_called()
+    providers.assert_not_called()
+
+
 def test_lower_priority_provider_fills_only_missing_metadata(series, app_config) -> None:
     disable_authors(app_config)
     app_config.system.dry_run = False

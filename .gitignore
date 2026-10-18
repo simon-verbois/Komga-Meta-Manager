@@ -22,6 +22,9 @@ wheels/
 
 # Config files
 config.yml
+/config/webui.db
+/config/webui.db-wal
+/config/webui.db-shm
 k8s-manifest/04-secret.yaml
 
 # Cache directories

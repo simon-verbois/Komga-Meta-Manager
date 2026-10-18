@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ t('logs.title') }} — KMM{% endblock %}
+
+{% block content %}
+<div class="space-y-6 h-full flex flex-col">
+  <h1 class="text-xl font-bold">{{ t('logs.title') }}</h1>
+
+  <!-- Tab bar -->
+  <div class="flex gap-1 border-b border-gray-800" x-data="{ tab: 'exec' }">
+    <!-- We use simple JS for tab switching (no alpine needed) -->
+  </div>
+
+  <!-- Tab controls -->
+  <div class="flex gap-2 text-sm" id="log-tabs">
+    <button onclick="showTab('exec')" id="tab-exec"
+            class="px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium">
+      {{ t('logs.exec.title') }}
+    </button>
+    <button onclick="showTab('audit')" id="tab-audit"
+            class="px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white">
+      {{ t('logs.audit.title') }}
+    </button>
+  </div>
+
+  <!-- Execution log panel -->
+  <div id="panel-exec" class="flex-1 flex flex-col bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none">
+          <input type="checkbox" id="debug-toggle" name="debug" value="true"
+                 class="rounded bg-gray-800 border-gray-600 text-indigo-500"
+                 onchange="refreshExecLog()" />
+          {{ t('logs.exec.debug') }}
+        </label>
+      </div>
+      <div class="flex gap-2">
+        <button hx-post="/logs/exec/clear"
+                hx-target="#exec-log-lines"
+                hx-swap="innerHTML"
+                class="text-xs text-gray-400 hover:text-white border border-gray-700
+                       px-3 py-1.5 rounded-lg transition-colors">
+          {{ t('logs.exec.clear') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Log lines (HTMX polling every 3s) -->
+    <div class="flex-1 overflow-y-auto log-scroll bg-gray-950 rounded-lg p-3 font-mono text-xs
+                min-h-0 max-h-[calc(100vh-22rem)]"
+         id="exec-log-container">
+      <div id="exec-log-lines"
+           hx-get="/logs/exec/lines"
+           hx-trigger="load, every 3s"
+           hx-swap="innerHTML"
+           hx-include="#debug-toggle">
+        <span class="text-gray-500">{{ t('logs.exec.empty') }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit log panel (hidden by default) -->
+  <div id="panel-audit" class="hidden flex-1 flex-col bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="overflow-y-auto log-scroll max-h-[calc(100vh-22rem)]">
+      <div id="audit-log-lines"
+           hx-get="/logs/audit/lines"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <span class="text-gray-500">{{ t('logs.audit.empty') }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.getElementById('panel-exec').classList.toggle('hidden', name !== 'exec');
+  document.getElementById('panel-exec').classList.toggle('flex', name === 'exec');
+  document.getElementById('panel-audit').classList.toggle('hidden', name !== 'audit');
+  document.getElementById('panel-audit').classList.toggle('flex', name === 'audit');
+
+  document.getElementById('tab-exec').className =
+    name === 'exec'
+      ? 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium'
+      : 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white';
+  document.getElementById('tab-audit').className =
+    name === 'audit'
+      ? 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium'
+      : 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white';
+
+  // Trigger audit load on first show
+  if (name === 'audit') {
+    htmx.trigger(document.getElementById('audit-log-lines'), 'load');
+  }
+}
+
+function refreshExecLog() {
+  htmx.trigger(document.getElementById('exec-log-lines'), 'load');
+}
+
+// Auto-scroll execution log to bottom on new content
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+  if (evt.target.id === 'exec-log-lines') {
+    const container = document.getElementById('exec-log-container');
+    container.scrollTop = container.scrollHeight;
+  }
+});
+</script>
+{% endblock %}

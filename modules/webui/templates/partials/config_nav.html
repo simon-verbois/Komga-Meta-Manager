@@ -1,0 +1,10 @@
+<!-- Config section nav tabs -->
+<div class="flex gap-1 flex-wrap text-xs">
+  {% for s_name in ['system','komga','providers','processing','translation'] %}
+  <a href="/config/{{ s_name }}"
+     class="px-3 py-1.5 rounded-md border
+            {% if section == s_name %}border-indigo-600 bg-indigo-700 text-white{% else %}border-gray-700 text-gray-400 hover:text-white hover:border-gray-600{% endif %}">
+    {{ t('config.nav.' ~ s_name) }}
+  </a>
+  {% endfor %}
+</div>

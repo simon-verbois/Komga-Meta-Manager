@@ -1,0 +1,10 @@
+{% if lines %}
+  {% for entry in lines %}
+  <div class="leading-5 {% if entry.level == 'ERROR' or entry.level == 'CRITICAL' %}text-red-400
+              {% elif entry.level == 'WARNING' %}text-yellow-400
+              {% elif entry.level == 'DEBUG' %}text-gray-600
+              {% else %}text-gray-300{% endif %}">{{ entry.msg }}</div>
+  {% endfor %}
+{% else %}
+<span class="text-gray-600">{{ t('logs.exec.empty') }}</span>
+{% endif %}

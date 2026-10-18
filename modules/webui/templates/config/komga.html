@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.nav.komga') }} — KMM{% endblock %}
+{% block content %}
+{% set k = cfg.get('komga', {}) %}
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <h1 class="text-xl font-bold">{{ t('config.title') }} — {{ t('config.nav.komga') }}</h1>
+    {% include "partials/config_nav.html" %}
+  </div>
+
+  {% include "partials/config_alerts.html" %}
+
+  <form method="post" action="/config/komga" id="komga-form" class="space-y-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('config.komga.url') }}</label>
+        <input type="url" name="url" value="{{ k.get('url', '') }}" required
+               placeholder="http://localhost:8080"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+
+      <!-- API key with show/hide toggle -->
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('config.komga.api_key') }}</label>
+        <div class="flex gap-2">
+          <input type="password" name="api_key" id="api-key"
+                 value="{{ k.get('api_key', '') }}" required
+                 class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+          <button type="button"
+                  onclick="toggleSecret('api-key', this)"
+                  class="px-3 py-2 text-xs border border-gray-700 rounded-lg text-gray-400
+                         hover:text-white transition-colors">
+            {{ t('common.show') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Libraries -->
+      <div>
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <h2 class="text-sm text-gray-300">{{ t('config.komga.libraries') }}</h2>
+          <button type="button" id="refresh-libraries"
+                  class="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+            {{ t('config.komga.libraries.refresh') }}
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-2">{{ t('config.komga.libraries.help') }}</p>
+        <input type="hidden" name="library_selection" value="checkboxes" />
+        <div id="library-list" class="space-y-2">
+          {% for library in k.get('libraries', []) %}
+          <label class="flex items-center gap-3 rounded-lg bg-gray-800 px-3 py-2 cursor-pointer">
+            <input type="checkbox" name="enabled_libraries" value="{{ library }}" checked
+                   class="w-4 h-4 rounded text-indigo-500" />
+            <span class="text-sm text-gray-200">{{ library }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <p id="library-status" role="status" aria-live="polite" class="text-xs text-gray-400 mt-2"></p>
+        <noscript><p class="text-xs text-amber-400 mt-2">{{ t('config.komga.libraries.javascript') }}</p></noscript>
+      </div>
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="verify_ssl" value="1"
+               {% if k.get('verify_ssl', True) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-indigo-500 w-4 h-4" />
+        <span class="text-sm text-gray-200">{{ t('config.komga.verify_ssl') }}</span>
+      </label>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg
+                     text-sm font-medium transition-colors">
+        {{ t('config.save') }}
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+function toggleSecret(id, btn) {
+  const input = document.getElementById(id);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = {{ t('common.hide') | tojson }};
+  } else {
+    input.type = 'password';
+    btn.textContent = {{ t('common.show') | tojson }};
+  }
+}
+
+const komgaForm = document.getElementById('komga-form');
+const libraryList = document.getElementById('library-list');
+const libraryStatus = document.getElementById('library-status');
+const refreshLibraries = document.getElementById('refresh-libraries');
+let libraryRequest = 0;
+let libraryController;
+
+async function fetchLibraries() {
+  const requestNumber = ++libraryRequest;
+  if (libraryController) libraryController.abort();
+  const url = komgaForm.elements.url;
+  const apiKey = komgaForm.elements.api_key;
+  if (!url.value || !url.validity.valid || !apiKey.value) {
+    refreshLibraries.disabled = false;
+    libraryStatus.textContent = {{ t('config.komga.libraries.connection') | tojson }};
+    return;
+  }
+  libraryController = new AbortController();
+  refreshLibraries.disabled = true;
+  libraryStatus.textContent = {{ t('config.komga.libraries.loading') | tojson }};
+  try {
+    const response = await fetch('/config/komga/libraries', {
+      method: 'POST',
+      body: new FormData(komgaForm),
+      signal: libraryController.signal,
+      redirect: 'error',
+    });
+    if (!response.ok) throw new Error('fetch_failed');
+    const data = await response.json();
+    if (requestNumber !== libraryRequest) return;
+
+    // Read the latest choices, including changes made while fetching.
+    const selected = new Set(Array.from(
+      libraryList.querySelectorAll('input:checked'), input => input.value
+    ));
+    const available = new Set(data.libraries.map(library => library.name));
+    // Retain saved selections if a library is temporarily unavailable.
+    const names = Array.from(new Set([...available, ...selected])).sort((a, b) => a.localeCompare(b));
+    const rows = names.map(name => {
+      const label = document.createElement('label');
+      label.className = 'flex items-center gap-3 rounded-lg bg-gray-800 px-3 py-2 cursor-pointer';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.name = 'enabled_libraries';
+      input.value = name;
+      input.checked = selected.has(name);
+      input.className = 'w-4 h-4 rounded text-indigo-500';
+      const text = document.createElement('span');
+      text.className = 'text-sm text-gray-200';
+      text.textContent = name;
+      label.append(input, text);
+      if (!available.has(name)) {
+        const warning = document.createElement('span');
+        warning.className = 'text-xs text-amber-400';
+        warning.textContent = {{ t('config.komga.libraries.unavailable') | tojson }};
+        label.append(warning);
+      }
+      return label;
+    });
+    libraryList.replaceChildren(...rows);
+    libraryStatus.textContent = available.size
+      ? {{ t('config.komga.libraries.loaded') | tojson }}
+      : {{ t('config.komga.libraries.empty') | tojson }};
+  } catch (error) {
+    if (requestNumber !== libraryRequest || error.name === 'AbortError') return;
+    libraryStatus.textContent = {{ t('config.komga.libraries.error') | tojson }};
+  } finally {
+    if (requestNumber === libraryRequest) refreshLibraries.disabled = false;
+  }
+}
+
+refreshLibraries.addEventListener('click', fetchLibraries);
+for (const name of ['url', 'api_key', 'verify_ssl']) {
+  komgaForm.elements[name].addEventListener('change', fetchLibraries);
+}
+fetchLibraries();
+</script>
+{% endblock %}

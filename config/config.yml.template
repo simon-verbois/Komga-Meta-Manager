@@ -1,6 +1,10 @@
 # ================================================================= #
 #             Komga Meta Manager Configuration File                 #
 # ================================================================= #
+# NOTE: Komga Meta Manager now features an integrated Web UI on
+# port 8765 (http://<host>:8765). Configuration is managed through
+# the Web UI and stored in /config/webui.db. If an existing config.yml
+# is present, it is automatically imported on first startup.
 
 system:
   dry_run: false         # Set to true to simulate changes without applying them to Komga
@@ -15,7 +19,7 @@ system:
 komga:
   url: "http://localhost:8080" # Your Komga instance URL
   api_key: "YOUR_KOMGA_API_KEY"
-  libraries:             # List of Komga libraries to process
+  libraries:             # Enabled library names; [] disables all processing. Managed by checkboxes in the Web UI.
     - "Manga"
     - "Webtoons"
   verify_ssl: true       # Set to false to disable SSL verification (less secure)

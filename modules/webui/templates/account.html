@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ t('account.title') }} — KMM{% endblock %}
+
+{% block content %}
+<div class="max-w-md">
+  <h1 class="text-xl font-bold mb-6">{{ t('account.title') }}</h1>
+
+  {% if success %}
+  <div class="mb-4 px-4 py-3 rounded-lg bg-green-900/50 border border-green-700 text-green-300 text-sm">
+    {{ t('account.success') }}
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div class="mb-4 px-4 py-3 rounded-lg bg-red-900/50 border border-red-700 text-red-300 text-sm">
+    {{ t(error) }}
+  </div>
+  {% endif %}
+
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+    <form method="post" action="/account" class="space-y-4">
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('account.current') }}</label>
+        <input type="password" name="current_password" required
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('account.new') }}</label>
+        <input type="password" name="new_password" required minlength="8"
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('account.confirm') }}</label>
+        <input type="password" name="new_password_confirm" required
+               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm
+                     transition-colors">
+        {{ t('account.submit') }}
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

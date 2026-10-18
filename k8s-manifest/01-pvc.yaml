@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: komga-meta-manager-cache
+  name: komga-meta-manager-config
   namespace: komga-meta-manager
 spec:
   storageClassName: hostpath-sc # Adjust according to your cluster

@@ -29,6 +29,7 @@ spec:
             secretKeyRef:
               name: komga-meta-manager-secrets
               key: komga-api-key
+              optional: true
         - name: KMM_DEEPL_API_KEY
           valueFrom:
             secretKeyRef:
@@ -49,40 +50,32 @@ spec:
           readOnlyRootFilesystem: true
           runAsNonRoot: true
         startupProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/kmm-ready').exists() else 1)"
+          httpGet:
+            path: /health
+            port: http
           periodSeconds: 5
           timeoutSeconds: 2
           failureThreshold: 12
         readinessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "from pathlib import Path; raise SystemExit(0 if Path('/tmp/kmm-ready').exists() else 1)"
+          httpGet:
+            path: /health
+            port: http
           periodSeconds: 10
           timeoutSeconds: 2
+        ports:
+        - name: http
+          containerPort: 8765
+          protocol: TCP
         volumeMounts:
         - name: config-volume
-          mountPath: /config/config.yml
-          subPath: config.yml
-          readOnly: true
-        - name: cache-volume
-          mountPath: /config/cache
+          mountPath: /config
         - name: runtime-volume
           mountPath: /tmp
 
       volumes:
       - name: config-volume
-        configMap:
-          name: komga-meta-manager-config
-          defaultMode: 0440
-      - name: cache-volume
         persistentVolumeClaim:
-          claimName: komga-meta-manager-cache
+          claimName: komga-meta-manager-config
       - name: runtime-volume
         emptyDir: {}
 

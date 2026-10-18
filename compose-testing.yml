@@ -4,10 +4,12 @@
 services:
   komga-meta-manager:
     build: .
-    container_name: komga-meta-manager
+    container_name: komga-meta-manager-dev
     restart: no
     environment:
       - TZ=Europe/Brussels
+    ports:
+      - "8765:8765"
     volumes:
       - ./config:/config
     command: sh -c "python -m modules.main"

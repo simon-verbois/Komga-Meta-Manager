@@ -9,3 +9,9 @@ thefuzz
 python-Levenshtein
 psutil
 pillow
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+bcrypt
+itsdangerous

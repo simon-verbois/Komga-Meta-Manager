@@ -1,0 +1,20 @@
+{% if success %}
+<div class="px-4 py-3 rounded-lg bg-green-900/50 border border-green-700 text-green-300 text-sm mb-4">
+  {{ t('config.saved') }}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="px-4 py-3 rounded-lg bg-red-900/50 border border-red-700 text-red-300 text-sm mb-4">
+  <strong>{{ t('config.error') }}</strong>
+  {% if error is mapping %}
+    <ul class="mt-1 list-disc list-inside">
+      {% for field, msg in error.items() %}
+      <li><span class="font-mono">{{ field }}</span>: {{ msg }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="mt-1">{{ error }}</p>
+  {% endif %}
+</div>
+{% endif %}

@@ -469,9 +469,13 @@ def process_libraries(
     Main processing function that iterates through libraries and series.
     Returns a structured outcome suitable for CLI exit codes and scheduling.
     """
+    result = ProcessingResult()
+    if not config.komga.libraries:
+        logger.info("No libraries enabled. Nothing to process.")
+        return result
+
     cache_dir = Path("/config/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    result = ProcessingResult()
 
     komga_client = KomgaClient(config.komga)
     metadata_provider = get_providers(config.providers, cache_dir)
@@ -587,6 +591,8 @@ def watch_for_new_series(
     original_level = komga_logger.level
 
     for lib_name, lib_id in target_libraries.items():
+        if lib_name not in config.komga.libraries:
+            continue
         # Silence komga_client logs during polling to reduce noise
         komga_logger.setLevel(logging.WARNING)
         try:

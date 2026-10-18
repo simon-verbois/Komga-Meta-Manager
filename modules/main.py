@@ -1,6 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Main entry point for the Manga Manager application.
+Main entry point for the Komga Meta Manager.
+
+Startup sequence:
+  1. Init database (SQLite at /config/webui.db)
+  2. Install execution log buffer handler
+  3. Load config from DB (may be None on first run)
+  4. Setup logging level
+  5. Start Web UI server in a daemon thread (port 8765)
+  6. If config is ready: start scheduler / watcher as before
+  7. Block on the continuous loop (or wait for config via Web UI)
 """
 import logging
 import os
@@ -13,42 +22,87 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from modules.config import load_config, AppConfig
+
+from modules.webui import log_buffer as _log_buffer
+from modules.webui.routes.dashboard import get_job_state
+
+from modules.webui.db import init_db
+from modules.webui.config_store import (
+    load_config_from_db,
+    get_config,
+)
+from modules.config import AppConfig
 from modules.processor import ProcessingResult, process_libraries, watch_for_new_series
 from modules.komga_client import KomgaClient
 from modules.providers import get_providers
 from modules.translators import get_translator
 from modules.scheduler import Scheduler
 from modules.utils import FrameFormatter, log_frame
+from modules.version import get_version
 
+PROCESSING_LOCK = threading.RLock()
 logger = logging.getLogger(__name__)
 READINESS_FILE = Path("/tmp/kmm-ready")
 SHUTDOWN_EVENT = threading.Event()
+# Fired when a config reload should restart scheduler/watcher
+CONFIG_RELOAD_EVENT = threading.Event()
 
-def display_header():
-    """Displays header information in log format."""
-    # Read version
-    with open(Path(__file__).resolve().parent.parent / 'VERSION', 'r', encoding='utf-8') as f:
-        version = f.read().strip()
 
-    # Check Docker
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+def setup_logging(debug: bool = False) -> None:
+    """Configures the root logger and installs the Web UI buffer handler."""
+    level = logging.DEBUG if debug else logging.INFO
+    if debug:
+        formatter = FrameFormatter(
+            '%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+        )
+    else:
+        formatter = FrameFormatter(
+            '%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+        )
+    logging.getLogger().setLevel(level)
+    logging.basicConfig(
+        level=level,
+        handlers=[logging.StreamHandler()],
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
+    handler = logging.getLogger().handlers[0]
+    handler.setFormatter(formatter)
+
+    # Install the Web UI circular buffer handler
+    _log_buffer.install_handler()
+
+    if not debug:
+        logging.getLogger("gql").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.INFO)
+        logging.getLogger("deepl").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+        logging.getLogger("fastapi").setLevel(logging.WARNING)
+
+
+# ---------------------------------------------------------------------------
+# Header display
+# ---------------------------------------------------------------------------
+
+def display_header() -> None:
+    """Displays ASCII header information in log format."""
+    version = get_version()
+
     docker_str = ' (Docker)' if os.path.exists('/.dockerenv') else ''
-
-    # Platform
     platform_str = platform.platform()
 
-    # Memory and process info (optional)
     try:
-        total_mem = int(psutil.virtual_memory().total / (1024**3))  # GB
-        avail_mem = int(psutil.virtual_memory().available / (1024**3))  # GB
-
+        total_mem = int(psutil.virtual_memory().total / (1024 ** 3))
+        avail_mem = int(psutil.virtual_memory().available / (1024 ** 3))
         nice = psutil.Process().nice()
-        if nice < 0:
-            prio_str = 'high'
-        elif nice > 0:
-            prio_str = 'low'
-        else:
-            prio_str = 'normal'
+        prio_str = 'high' if nice < 0 else ('low' if nice > 0 else 'normal')
     except (ImportError, AttributeError):
         total_mem = avail_mem = 0
         prio_str = 'unknown'
@@ -57,8 +111,8 @@ def display_header():
     logging.info("|                                                                                                    |")
     logging.info("|                         _  __                      __  __     _                                    |")
     logging.info(r"|                         | |/ /___ _ __  __ _ __ _  |  \/  |___| |_ __ _                            |")
-    logging.info(r"|                         | ' </ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
-    logging.info(r"|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\__\__,_|                           |")
+    logging.info(r"|                         | ' \/ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
+    logging.info(r"|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\_\_\__,_|                           |")
     logging.info("|                                         |___/                                                      |")
     logging.info("|                                         M  A  N  A  G  E  R                                        |")
     logging.info("|                                                                                                    |")
@@ -69,54 +123,68 @@ def display_header():
     log_frame("Process Priority: {}".format(prio_str), 'left')
     logging.info("|                                                                                                    |")
     logging.info("|====================================================================================================|")
-    log_frame("Global Configurations", 'center')
+    log_frame("Web UI available at http://0.0.0.0:8765", 'center')
     logging.info("|====================================================================================================|")
 
-def setup_logging(debug: bool = False):
-    """Configures the root logger."""
-    level = logging.DEBUG if debug else logging.INFO
-    if debug:
-        formatter = FrameFormatter(
-            '%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+
+# ---------------------------------------------------------------------------
+# Web UI server thread
+# ---------------------------------------------------------------------------
+
+def start_webui_thread(run_job_fn) -> threading.Thread:
+    """Start the FastAPI/uvicorn server in a daemon thread."""
+    from modules.webui.app import create_app
+    import uvicorn
+
+    def _reload_callback(new_cfg: AppConfig) -> None:
+        """Called by config_store whenever the config is saved from the Web UI."""
+        setup_logging(new_cfg.system.debug)
+        logger.info("Config reloaded from Web UI — signalling restart.")
+        CONFIG_RELOAD_EVENT.set()
+
+    app = create_app(run_job_fn=run_job_fn, reload_callback=_reload_callback)
+
+    def _serve():
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=8765,
+            log_level="warning",
+            access_log=False,
         )
-    else:
-        formatter = FrameFormatter(
-            '%(asctime)s [%(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-    logging.basicConfig(
-        level=level,
-        handlers=[logging.StreamHandler()],
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    # Apply the formatter to the root logger's handler
-    handler = logging.getLogger().handlers[0]
-    handler.setFormatter(formatter)
-    if not debug:
-        logging.getLogger("gql").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.INFO)
-        logging.getLogger("deepl").setLevel(logging.WARNING)
+        server = uvicorn.Server(config)
+        server.run()
+
+    t = threading.Thread(target=_serve, daemon=True, name="webui-server")
+    t.start()
+    logger.info("Web UI server started on port 8765.")
+    return t
+
+
+# ---------------------------------------------------------------------------
+# Job helpers (unchanged from original)
+# ---------------------------------------------------------------------------
 
 def run_job_and_save_cache(config: AppConfig) -> ProcessingResult:
-    """
-    Wrapper for the main job that ensures the translator cache is saved after execution.
-    """
-    result: Optional[ProcessingResult] = None
-    try:
-        result = process_libraries(config, stop_event=SHUTDOWN_EVENT)
-        return result
-    finally:
-        translator = result.translator if result else None
-        if translator and hasattr(translator, 'save_cache_to_disk'):
-            translator.save_cache_to_disk()
+    """Wrapper that ensures the translator cache is saved after execution."""
+    with PROCESSING_LOCK:
+        state = get_job_state()
+        state.start()
+        result: Optional[ProcessingResult] = None
+        try:
+            result = process_libraries(config, stop_event=SHUTDOWN_EVENT)
+            return result
+        finally:
+            try:
+                translator = result.translator if result else None
+                if translator and hasattr(translator, 'save_cache_to_disk'):
+                    translator.save_cache_to_disk()
+            finally:
+                state.finish(bool(result and result.success))
+
 
 def initialize_watcher_series(komga_client: 'KomgaClient', target_libraries: dict) -> dict:
-    """
-    Initialize the known series for the watcher.
-    Returns a dict mapping lib_id to set of series_ids.
-    """
+    """Initialize the watcher: scan existing series in all target libraries."""
     known_series = {}
     logging.info("|                                                                                                    |")
     logging.info("|====================================================================================================|")
@@ -130,25 +198,6 @@ def initialize_watcher_series(komga_client: 'KomgaClient', target_libraries: dic
     logger.info("Watcher initialization complete.")
     return known_series
 
-def initialize_application() -> AppConfig:
-    """Initialize the application: load config, setup logging, display header."""
-    app_config = load_config()
-    setup_logging(app_config.system.debug)
-    display_header()
-    log_frame("Configuration loaded successfully.", 'left')
-    if app_config.system.dry_run:
-        logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
-    return app_config
-
-def run_once_mode(config: AppConfig) -> int:
-    """Execute the application in run-once mode."""
-    logging.info("Scheduler and watcher disabled. Running the job once.")
-    result = run_job_and_save_cache(config=config)
-    logging.info("|                                                                                                    |")
-    logging.info("|====================================================================================================|")
-    log_frame("Komga Meta Manager Finished", 'center')
-    logging.info("|====================================================================================================|")
-    return 0 if result.success else 1
 
 def initialize_scheduler(config: AppConfig) -> Optional[Scheduler]:
     """Initialize the scheduler if enabled. Returns Scheduler instance or None."""
@@ -158,15 +207,14 @@ def initialize_scheduler(config: AppConfig) -> Optional[Scheduler]:
     run_time = config.system.scheduler.run_at
     logging.info(f"Scheduler is enabled. Job will run every day at {run_time}.")
 
-    # Create the optimized scheduler
     scheduler = Scheduler(config, run_job_and_save_cache)
 
-    # Calculate and log next run time
     next_wait = scheduler.calculate_job_wait_seconds()
     next_run_datetime = datetime.now() + timedelta(seconds=next_wait)
     logging.info(f"Initial next scheduled run at: {next_run_datetime}")
 
     return scheduler
+
 
 @dataclass
 class WatcherComponents:
@@ -179,16 +227,16 @@ class WatcherComponents:
     last_poll_time: float = 0
     initialized: bool = False
 
+
 def initialize_watcher(config: AppConfig) -> WatcherComponents:
     """Initialize the watcher if enabled. Returns WatcherComponents."""
     components = WatcherComponents()
 
-    if not config.system.watcher.enabled:
+    if not config.system.watcher.enabled or not config.komga.libraries:
         return components
 
     logging.info("Watcher is enabled. New series will be processed automatically.")
 
-    # Initialize components for watcher
     cache_dir = Path("/config/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,7 +245,6 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
         logging.error("Failed to initialize provider for watcher. Watcher will be disabled.")
         return components
 
-    # Initialize translator for watcher
     if config.translation and config.translation.enabled:
         translator_provider = config.translation.provider.lower()
         translator_kwargs = {}
@@ -215,29 +262,30 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
                 logger.error("Failed to initialize translator for watcher.")
                 return WatcherComponents()
 
-    # Initialize Komga client and libraries
     components.komga_client = KomgaClient(config.komga)
     all_libraries = components.komga_client.get_libraries()
     if not all_libraries:
-        logging.error("Could not retrieve libraries from Komga for watcher initialization. Aborting watcher.")
-        return WatcherComponents()  # Return empty components
+        logging.error("Could not retrieve libraries from Komga for watcher initialization.")
+        return WatcherComponents()
 
-    components.target_libraries = {lib.name: lib.id for lib in all_libraries if lib.name in config.komga.libraries}
+    components.target_libraries = {
+        lib.name: lib.id for lib in all_libraries if lib.name in config.komga.libraries
+    }
     if not components.target_libraries:
         logging.warning("No matching libraries found for watcher. Watcher will be disabled.")
-        return WatcherComponents()  # Return empty components
+        return WatcherComponents()
 
-    # Initialize known series
-    components.known_series = initialize_watcher_series(components.komga_client, components.target_libraries)
+    components.known_series = initialize_watcher_series(
+        components.komga_client, components.target_libraries
+    )
     logging.info(f"Next watcher poll in {config.system.watcher.polling_interval_minutes} minutes.")
 
-    # Perform immediate first check
     logger.info("Watcher: Performing initial series check...")
-    has_processed = watch_for_new_series(
+    has_processed = _watch_exclusively(
         config, components.komga_client, components.target_libraries,
         components.known_series, components.metadata_provider, components.translator,
     )
-    components.last_poll_time = time.monotonic()  # Set after first check
+    components.last_poll_time = time.monotonic()
     components.initialized = True
 
     if has_processed:
@@ -249,13 +297,19 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
 
     return components
 
+
+def _watch_exclusively(*args, **kwargs):
+    with PROCESSING_LOCK:
+        return watch_for_new_series(*args, **kwargs)
+
+
 def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponents) -> bool:
-    """Wrapper function for watcher polling that returns whether processing occurred."""
+    """Wrapper function for watcher polling."""
     if watcher_components.known_series is None:
         return False
 
     logger.debug("Watcher: Checking for new series...")
-    has_processed = watch_for_new_series(
+    has_processed = _watch_exclusively(
         config, watcher_components.komga_client,
         watcher_components.target_libraries, watcher_components.known_series,
         watcher_components.metadata_provider, watcher_components.translator,
@@ -270,16 +324,16 @@ def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponen
 
     return has_processed
 
+
 def run_continuous_loop(
     config: AppConfig,
     scheduler: Optional[Scheduler],
     watcher_components: WatcherComponents,
     stop_event: threading.Event,
-):
+) -> None:
     """Run the main continuous loop for scheduler and/or watcher."""
     try:
         if scheduler:
-            # Use the optimized scheduler that handles both scheduler and watcher
             watcher_func = None
             if config.system.watcher.enabled and watcher_components.initialized:
                 def watcher_func():
@@ -287,11 +341,10 @@ def run_continuous_loop(
 
             scheduler.run(watcher_func, stop_event=stop_event)
         else:
-            # Fallback: only watcher enabled, no scheduler
             logger.info("Only watcher enabled, running in legacy mode.")
             while not stop_event.is_set():
                 if (config.system.watcher.enabled and
-                    watcher_components.known_series is not None):
+                        watcher_components.known_series is not None):
 
                     current_time = time.monotonic()
                     poll_interval = config.system.watcher.polling_interval_minutes * 60
@@ -303,57 +356,167 @@ def run_continuous_loop(
                         finally:
                             watcher_components.last_poll_time = time.monotonic()
 
-                stop_event.wait(60)  # Check every minute
+                stop_event.wait(60)
 
     except KeyboardInterrupt:
         logging.info("Shutdown signal received. Exiting gracefully.")
 
+
+def initialize_application() -> Optional[AppConfig]:
+    """Initialize the application: load config, setup logging, display header."""
+    init_db()
+    app_config = load_config_from_db()
+    debug = app_config.system.debug if app_config else False
+    setup_logging(debug)
+    display_header()
+    if app_config:
+        log_frame("Configuration loaded from database.", 'left')
+        if app_config.system.dry_run:
+            logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
+    else:
+        log_frame("No configuration found — complete setup at http://0.0.0.0:8765", 'left')
+    return app_config
+
+
+def run_once_mode(config: AppConfig) -> int:
+    """Execute the application in run-once mode."""
+    logging.info("Scheduler and watcher disabled. Running the job once.")
+    result = run_job_and_save_cache(config=config)
+    logging.info("|                                                                                                    |")
+    logging.info("|====================================================================================================|")
+    log_frame("Komga Meta Manager Finished", 'center')
+    logging.info("|====================================================================================================|")
+    return 0 if result.success else 1
+
+
+# ---------------------------------------------------------------------------
+# Wait for first config (when DB has no config yet)
+# ---------------------------------------------------------------------------
+
+def wait_for_config(stop_event: threading.Event) -> Optional[AppConfig]:
+    """
+    Block until the user completes the setup wizard and saves a config,
+    or until a shutdown signal is received.
+    """
+    logger.info("No configuration found in database. Waiting for Web UI setup…")
+    while not stop_event.is_set():
+        cfg = get_config()
+        if cfg is not None:
+            logger.info("Configuration received from Web UI. Starting application.")
+            return cfg
+        stop_event.wait(0.5)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
-    """Main function to run the Manga Manager."""
+    """Main function to run Komga Meta Manager with integrated Web UI."""
     try:
         READINESS_FILE.unlink(missing_ok=True)
         SHUTDOWN_EVENT.clear()
+        CONFIG_RELOAD_EVENT.clear()
+
         app_config = initialize_application()
 
+        # --- Signal handlers ---
         def request_shutdown(signum, _frame):
             logging.info(f"Shutdown signal {signum} received.")
             SHUTDOWN_EVENT.set()
+            CONFIG_RELOAD_EVENT.set()
 
         signal.signal(signal.SIGTERM, request_shutdown)
         signal.signal(signal.SIGINT, request_shutdown)
 
-        # Determine if we need continuous running (scheduler or watcher)
-        continuous_mode = app_config.system.scheduler.enabled or app_config.system.watcher.enabled
+        start_webui_thread(run_job_and_save_cache)
 
-        if not continuous_mode:
-            return run_once_mode(app_config)
+        # --- Wait for config if not yet configured ---
+        if app_config is None:
+            app_config = wait_for_config(SHUTDOWN_EVENT)
+            if app_config is None:
+                logger.info("Shutdown requested before setup was completed.")
+                return 0
+            setup_logging(app_config.system.debug)
 
-        # Continuous mode: setup scheduler and watcher
-        scheduler = initialize_scheduler(app_config)
-        try:
-            watcher_components = initialize_watcher(app_config)
-        except Exception as e:
-            logging.error(f"Watcher initialization failed: {e}", exc_info=app_config.system.debug)
-            watcher_components = WatcherComponents()
+        # --- Main application loop with hot-reload support ---
+        while not SHUTDOWN_EVENT.is_set():
+            CONFIG_RELOAD_EVENT.clear()
 
-        if app_config.system.watcher.enabled and not watcher_components.initialized and scheduler is None:
-            logging.error("Watcher is the only enabled mode and could not initialize.")
-            return 1
+            continuous_mode = (
+                app_config.system.scheduler.enabled or
+                app_config.system.watcher.enabled
+            )
 
-        # Run the continuous loop
-        READINESS_FILE.write_text("ready\n", encoding="utf-8")
-        try:
-            run_continuous_loop(app_config, scheduler, watcher_components, SHUTDOWN_EVENT)
-        finally:
-            READINESS_FILE.unlink(missing_ok=True)
-            translator = watcher_components.translator
-            if translator and hasattr(translator, 'save_cache_to_disk'):
-                translator.save_cache_to_disk()
+            if not continuous_mode:
+                logger.info("Scheduler and watcher disabled. Waiting for a manual run or configuration change.")
+                while not SHUTDOWN_EVENT.is_set() and not CONFIG_RELOAD_EVENT.wait(0.5):
+                    pass
+                new_cfg = get_config()
+                if new_cfg is not None:
+                    app_config = new_cfg
+                continue
+
+            # --- Continuous mode ---
+            scheduler = initialize_scheduler(app_config)
+            try:
+                watcher_components = initialize_watcher(app_config)
+            except Exception as e:
+                logging.error(f"Watcher initialization failed: {e}", exc_info=app_config.system.debug)
+                watcher_components = WatcherComponents()
+
+            if (app_config.system.watcher.enabled and
+                    app_config.komga.libraries and
+                    not watcher_components.initialized and
+                    scheduler is None):
+                logging.error("Watcher is the only enabled mode and could not initialize.")
+                # Don't hard-exit — wait for config change via Web UI
+                while not SHUTDOWN_EVENT.is_set() and not CONFIG_RELOAD_EVENT.wait(0.5):
+                    pass
+                if SHUTDOWN_EVENT.is_set():
+                    break
+                app_config = get_config()
+                continue
+
+            READINESS_FILE.write_text("ready\n", encoding="utf-8")
+            try:
+                loop_stop = threading.Event()
+
+                def _listen_reload():
+                    while not loop_stop.is_set():
+                        if SHUTDOWN_EVENT.is_set() or CONFIG_RELOAD_EVENT.is_set():
+                            loop_stop.set()
+                            break
+                        time.sleep(0.2)
+
+                listen_thread = threading.Thread(target=_listen_reload, daemon=True)
+                listen_thread.start()
+
+                run_continuous_loop(app_config, scheduler, watcher_components, loop_stop)
+                loop_stop.set()
+            finally:
+                READINESS_FILE.unlink(missing_ok=True)
+                translator = watcher_components.translator
+                if translator and hasattr(translator, 'save_cache_to_disk'):
+                    watcher_components.translator.save_cache_to_disk()
+
+            if SHUTDOWN_EVENT.is_set():
+                break
+
+            # Hot reload: grab the new config and restart
+            new_cfg = get_config()
+            if new_cfg is not None:
+                app_config = new_cfg
+                setup_logging(app_config.system.debug)
+                logger.info("Hot reload: restarting with new configuration.")
+
         return 0
 
     except Exception as e:
         logging.error(f"A critical error occurred during setup: {e}", exc_info=True)
         return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

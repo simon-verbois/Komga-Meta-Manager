@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: komga-meta-manager
+  namespace: komga-meta-manager
+  labels:
+    app: komga-meta-manager
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8765
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    app: komga-meta-manager

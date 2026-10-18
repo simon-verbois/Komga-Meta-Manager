@@ -46,7 +46,7 @@ class KomgaConfig(BaseModel):
     """Pydantic model for Komga server configuration."""
     url: HttpUrl
     api_key: str = Field(..., min_length=1)
-    libraries: List[str] = Field(..., min_length=1)
+    libraries: List[str] = Field(default_factory=list)
     verify_ssl: bool = True
 
 class CacheConfig(BaseModel):

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.nav.system') }} — KMM{% endblock %}
+{% block content %}
+{% set s = cfg.get('system', {}) %}
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold">{{ t('config.title') }} — {{ t('config.nav.system') }}</h1>
+    {% include "partials/config_nav.html" %}
+  </div>
+
+  {% include "partials/config_alerts.html" %}
+
+  <form method="post" action="/config/system" class="space-y-6">
+    <!-- General -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+      <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">{{ t('common.general') }}</h2>
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="dry_run" value="1"
+               {% if s.get('dry_run', True) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-yellow-500 focus:ring-yellow-500 w-4 h-4" />
+        <div>
+          <div class="text-sm text-gray-200">{{ t('config.system.dry_run') }}</div>
+          <div class="text-xs text-gray-500">{{ t('config.system.dry_run.help') }}</div>
+        </div>
+      </label>
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="debug" value="1"
+               {% if s.get('debug', False) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-indigo-500 focus:ring-indigo-500 w-4 h-4" />
+        <div>
+          <div class="text-sm text-gray-200">{{ t('config.system.debug') }}</div>
+          <div class="text-xs text-gray-500">{{ t('config.system.debug.help') }}</div>
+        </div>
+      </label>
+    </div>
+
+    <!-- Scheduler -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+      <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">{{ t('config.system.scheduler') }}</h2>
+      {% set sched = s.get('scheduler', {}) %}
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="scheduler_enabled" value="1" id="scheduler-enabled"
+               {% if sched.get('enabled', False) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-indigo-500 w-4 h-4"
+               onchange="document.getElementById('sched-opts').classList.toggle('hidden', !this.checked)" />
+        <span class="text-sm text-gray-200">{{ t('config.system.scheduler.enabled') }}</span>
+      </label>
+
+      <div id="sched-opts" {% if not sched.get('enabled', False) %}class="hidden"{% endif %}>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('config.system.scheduler.run_at') }}</label>
+        <input type="text" name="run_at" value="{{ sched.get('run_at', '04:00') }}"
+               pattern="\d{2}:\d{2}" placeholder="HH:MM"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500 w-36" />
+      </div>
+    </div>
+
+    <!-- Watcher -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+      <h2 class="text-sm font-semibold text-gray-200 uppercase tracking-wide">{{ t('config.system.watcher') }}</h2>
+      {% set watcher = s.get('watcher', {}) %}
+
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" name="watcher_enabled" value="1" id="watcher-enabled"
+               {% if watcher.get('enabled', False) %}checked{% endif %}
+               class="rounded bg-gray-800 border-gray-600 text-indigo-500 w-4 h-4"
+               onchange="document.getElementById('watcher-opts').classList.toggle('hidden', !this.checked)" />
+        <span class="text-sm text-gray-200">{{ t('config.system.watcher.enabled') }}</span>
+      </label>
+
+      <div id="watcher-opts" {% if not watcher.get('enabled', False) %}class="hidden"{% endif %}>
+        <label class="block text-sm text-gray-300 mb-1">{{ t('config.system.watcher.interval') }}</label>
+        <input type="number" name="polling_interval_minutes"
+               value="{{ watcher.get('polling_interval_minutes', 5) }}" min="1"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500 w-28" />
+      </div>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg
+                     text-sm font-medium transition-colors">
+        {{ t('config.save') }}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

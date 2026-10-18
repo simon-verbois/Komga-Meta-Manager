@@ -3,8 +3,10 @@ services:
   komga-meta-manager:
     image: simonverbois/komga-meta-manager:latest
     container_name: komga-meta-manager
-    restart: no
+    restart: unless-stopped
     environment:
       - TZ=Europe/Brussels
+    ports:
+      - "8765:8765"
     volumes:
       - ./config:/config
