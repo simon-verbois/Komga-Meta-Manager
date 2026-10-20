@@ -1,95 +1,90 @@
+{% from 'macros/ui.html' import icon, nav_link with context %}
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-950">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}Komga Meta Manager{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
-  <style>
-    /* Custom scrollbar for log viewers */
-    .log-scroll::-webkit-scrollbar { width: 6px; }
-    .log-scroll::-webkit-scrollbar-track { background: #111827; }
-    .log-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-    /* HTMX loading indicator */
-    .htmx-indicator { opacity: 0; transition: opacity 200ms; }
-    .htmx-request .htmx-indicator { opacity: 1; }
-    .htmx-request.htmx-indicator { opacity: 1; }
-  </style>
-  {% block head %}{% endblock %}
-</head>
-<body class="h-full text-gray-100 font-sans">
-
-{% if request.url.path not in ['/login', '/setup'] %}
-<!-- ===== Sidebar ===== -->
-<div class="flex flex-col md:flex-row min-h-full md:h-full">
-  <aside class="w-full md:w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
-    <!-- Brand -->
-    <div class="px-4 py-5 border-b border-gray-800">
-      <span class="text-sm font-bold text-indigo-400 tracking-wide uppercase">KMM</span>
-      <p class="text-xs text-gray-500 mt-0.5">Meta Manager</p>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f6f7f4">
+    <title>{% block title %}Komga Meta Manager{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/vendor/htmx.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
+    {% block head %}{% endblock %}
+  </head>
+  <body data-show="{{ t('common.show') }}"
+        data-hide="{{ t('common.hide') }}"
+        data-unsaved="{{ t('ui.unsaved') }}"
+        data-saving="{{ t('ui.saving') }}">
+    <a class="skip-link" href="#main-content">{{ t('ui.skip') }}</a>
+    {% if request.url.path not in ['/login', '/setup'] %}
+      {% set pending_count = nav_pending() if username is defined and username else 0 %}
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="sidebar-heading">
+            <a class="brand" href="/" aria-label="Komga Meta Manager, {{ t('nav.home') }}">
+              <span class="brand-mark">{{ icon('books') }}</span>
+              <span>Komga<span class="brand-subtitle">Meta Manager</span></span>
+            </a>
+            <button type="button" class="button button-icon mobile-menu" id="menu-toggle"
+                    aria-controls="sidebar-navigation" aria-expanded="false"
+                    aria-label="{{ t('ui.menu') }}">{{ icon('menu') }}{% if pending_count %}<span class="menu-dot" aria-hidden="true"></span>{% endif %}</button>
+          </div>
+          <div class="sidebar-navigation" id="sidebar-navigation">
+            <nav aria-label="{{ t('ui.navigation') }}">
+              {{ nav_link('/', t('nav.home'), 'home') }}
+              {{ nav_link('/libraries', t('nav.libraries'), 'books') }}
+              {{ nav_link('/review', t('nav.review'), 'review', pending_count) }}
+              {{ nav_link('/logs', t('nav.activity'), 'logs') }}
+              {{ nav_link('/settings', t('nav.settings'), 'processing') }}
+            </nav>
+            <div class="sidebar-bottom">
+              <a class="version" href="https://github.com/simon-verbois/Komga-Meta-Manager" target="_blank" rel="noopener noreferrer">{{ app_version }}</a>
+            </div>
+          </div>
+        </aside>
+        <div class="workspace">
+          <header class="topbar">
+            <div class="topbar-title">
+              {% block back %}{% endblock %}
+              <h1>{% block heading %}{% endblock %}</h1>
+            </div>
+            <div class="topbar-actions">
+              {% block actions %}{% endblock %}
+              <details class="user-menu">
+                <summary aria-label="{{ t('ui.account_menu') }}">{{ icon('user') }}<span class="user-name">{{ username | default('') }}</span></summary>
+                <div class="user-menu-items">
+                  <a class="nav-item" href="/account">{{ icon('user') }}{{ t('account.title') }}</a>
+                  <form method="post" action="/logout"><button type="submit" class="nav-item">{{ icon('logout') }}{{ t('nav.logout') }}</button></form>
+                </div>
+              </details>
+            </div>
+          </header>
+          <main id="main-content" tabindex="-1">
+            {% block content %}{% endblock %}
+          </main>
+        </div>
+      </div>
+    {% else %}
+      <main id="main-content" class="auth-layout" tabindex="-1">
+        <div class="auth-story">
+          <a class="brand" href="/login">
+            <span class="brand-mark">{{ icon('books') }}</span>
+            <span>Komga<span class="brand-subtitle">Meta Manager</span></span>
+          </a>
+          <div>
+            <h2>{{ t('ui.auth.headline') }}</h2>
+            <ol class="auth-steps">
+              <li><strong>{{ t('ui.auth.step1') }}</strong> {{ t('ui.auth.step1.help') }}</li>
+              <li><strong>{{ t('ui.auth.step2') }}</strong> {{ t('ui.auth.step2.help') }}</li>
+              <li><strong>{{ t('ui.auth.step3') }}</strong> {{ t('ui.auth.step3.help') }}</li>
+            </ol>
+          </div>
+        </div>
+        <div class="auth-form-layout">{{ self.content() }}</div>
+      </main>
+    {% endif %}
+    <div id="request-feedback" class="request-feedback alert alert-error" role="alert" hidden>
+      {{ t('ui.request.error') }}
     </div>
-    <!-- Nav -->
-    <nav class="flex-1 px-2 py-4 space-y-1 text-sm">
-      <a href="/"
-         class="flex items-center gap-2 px-3 py-2 rounded-md
-                {% if request.url.path == '/' %}bg-indigo-700 text-white{% else %}text-gray-300 hover:bg-gray-800{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-        </svg>
-        {{ t('nav.dashboard') }}
-      </a>
-
-      <div class="pt-2 pb-1 px-3 text-xs text-gray-500 uppercase tracking-wider">{{ t('nav.config') }}</div>
-      {% for s in ['system','komga','providers','processing','translation'] %}
-      <a href="/config/{{ s }}"
-         class="flex items-center gap-2 px-3 py-2 rounded-md
-                {% if request.url.path == '/config/' ~ s %}bg-indigo-700 text-white{% else %}text-gray-300 hover:bg-gray-800{% endif %}">
-        <span class="w-4 h-4 text-center text-xs">›</span>
-        {{ t('config.nav.' ~ s) }}
-      </a>
-      {% endfor %}
-
-      <div class="pt-2 pb-1 px-3 text-xs text-gray-500 uppercase tracking-wider">{{ t('nav.tools') }}</div>
-      <a href="/logs"
-         class="flex items-center gap-2 px-3 py-2 rounded-md
-                {% if '/logs' in request.url.path %}bg-indigo-700 text-white{% else %}text-gray-300 hover:bg-gray-800{% endif %}">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        {{ t('nav.logs') }}
-      </a>
-    </nav>
-    <!-- Footer -->
-    <div class="px-4 py-3 border-t border-gray-800 text-xs text-gray-500 space-y-1">
-      <div>{{ app_version }}</div>
-      {% if username is defined %}
-      <div class="text-gray-300 truncate">{{ username }}</div>
-      <a href="/account" class="hover:text-gray-100 block">{{ t('account.title') }}</a>
-      {% endif %}
-      <form method="post" action="/logout">
-        <button type="submit"
-                class="text-red-400 hover:text-red-300 w-full text-left">
-          {{ t('nav.logout') }}
-        </button>
-      </form>
-    </div>
-  </aside>
-
-  <!-- ===== Main content ===== -->
-  <main class="flex-1 min-w-0 overflow-y-auto bg-gray-950 p-4 md:p-6">
-    {% block content %}{% endblock %}
-  </main>
-</div>
-
-{% else %}
-<!-- Auth/setup pages — centered layout -->
-<div class="min-h-full flex items-center justify-center py-12 px-4">
-  {{ self.content() }}
-</div>
-{% endif %}
-
-</body>
+  </body>
 </html>

@@ -7,17 +7,33 @@ GET  /logs/exec/lines         → HTMX fragment: execution log lines
 POST /logs/exec/clear         → clear execution log buffer
 GET  /logs/audit/lines        → HTMX fragment: audit log lines (paginated)
 """
+import json
 import logging
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from modules.job_queue import job_kind
 from modules.webui import log_buffer
-from modules.webui.db import count_audit_log, get_audit_log
+from modules.webui.db import count_audit_log, get_audit_log, get_db
 from modules.webui.routes.guards import get_current_user
 
 logger = logging.getLogger(__name__)
+
+
+def describe_job(row) -> dict:
+    """Summarize a stored job without exposing its saved settings or secrets."""
+    saved = json.loads(row["config"])
+    ids = json.loads(row["series_ids"]) if row["series_ids"] else None
+    return {
+        **{key: row[key] for key in ("id", "status", "source", "created_at", "started_at", "finished_at",
+                                     "processed", "failed", "skipped")},
+        **job_kind(saved),
+        "libraries": saved["komga"]["libraries"],
+        "series_count": len(ids) if ids is not None else None,
+        "replace_edits": bool(saved.get("system", {}).get("overwrite_local")),
+    }
 
 
 def setup_routes(templates: Jinja2Templates) -> APIRouter:
@@ -25,13 +41,34 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("", response_class=HTMLResponse)
     @router.get("/", response_class=HTMLResponse)
-    async def logs_page(request: Request):
+    async def logs_page(request: Request, tab: str = "jobs"):
         username = get_current_user(request)
         if not username:
             return RedirectResponse("/login", status_code=302)
+        tab = {"exec": "technical", "audit": "history"}.get(tab, tab)
         return templates.TemplateResponse(
-            request=request, name="logs.html", context={"username": username}
+            request=request,
+            name="logs.html",
+            context={
+                "username": username,
+                "tab": tab if tab in ("jobs", "history", "technical") else "jobs",
+                "log_levels": log_buffer.LOG_LEVELS,
+                "default_log_levels": log_buffer.DEFAULT_LOG_LEVELS,
+            },
         )
+
+    @router.get("/jobs/list", response_class=HTMLResponse)
+    async def job_list(request: Request, page: int = Query(default=1, ge=1)):
+        if not get_current_user(request):
+            return HTMLResponse("")
+        with get_db() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            rows = conn.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 25 OFFSET ?", ((page - 1) * 25,)).fetchall()
+        jobs = [describe_job(row) for row in rows]
+        return templates.TemplateResponse(request=request, name="partials/jobs_list.html", context={
+            "jobs": jobs, "page": page, "total_pages": max(1, (total + 24) // 25),
+            "active": any(job["status"] in ("queued", "running", "stopping") for job in jobs),
+        })
 
     # ------------------------------------------------------------------
     # Execution log
@@ -39,16 +76,18 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
     @router.get("/exec/lines", response_class=HTMLResponse)
     async def exec_log_lines(
         request: Request,
-        debug: bool = Query(default=False),
+        levels: list[log_buffer.LogLevel] | None = Query(default=None),
+        filtered: bool = Query(default=False),
     ):
         username = get_current_user(request)
         if not username:
             return HTMLResponse("")
-        lines = log_buffer.get_lines(include_debug=debug)
+        selected = levels if levels is not None else ([] if filtered else log_buffer.DEFAULT_LOG_LEVELS)
+        lines = log_buffer.get_lines(levels=selected)
         return templates.TemplateResponse(
             request=request,
             name="partials/exec_log_lines.html",
-            context={"lines": lines, "debug": debug},
+            context={"lines": lines, "has_logs": bool(log_buffer.get_lines(levels=log_buffer.LOG_LEVELS))},
         )
 
     @router.post("/exec/clear", response_class=HTMLResponse)
@@ -60,7 +99,7 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
         return templates.TemplateResponse(
             request=request,
             name="partials/exec_log_lines.html",
-            context={"lines": [], "debug": False},
+            context={"lines": [], "has_logs": False},
         )
 
     # ------------------------------------------------------------------
@@ -88,5 +127,62 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
                 "total_pages": total_pages,
             },
         )
+
+    @router.get("/jobs", response_class=HTMLResponse)
+    async def job_history(request: Request):
+        return RedirectResponse("/logs", status_code=302)
+
+    @router.get("/jobs/{job_id}", response_class=HTMLResponse)
+    async def job_detail(request: Request, job_id: int):
+        username = get_current_user(request)
+        if not username:
+            return RedirectResponse("/login", status_code=302)
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                return HTMLResponse(status_code=404)
+            total = conn.execute("SELECT COUNT(*) FROM job_logs WHERE job_id=?", (job_id,)).fetchone()[0]
+            problems = conn.execute(
+                "SELECT COUNT(*) FROM job_logs WHERE job_id=? AND level IN ('WARNING', 'ERROR', 'CRITICAL')", (job_id,)
+            ).fetchone()[0]
+        job = describe_job(row)
+        return templates.TemplateResponse(request=request, name="job_detail.html", context={
+            "username": username, "job": job, "log_count": total, "problems": problems,
+            "total_pages": max(1, (total + 199) // 200),
+            "message": request.query_params.get("message"),
+        })
+
+    @router.get("/jobs/{job_id}/lines", response_class=HTMLResponse)
+    async def job_lines(request: Request, job_id: int, page: int = Query(default=1, ge=1),
+                        levels: list[log_buffer.LogLevel] | None = Query(default=None),
+                        filtered: bool = Query(default=False)):
+        if not get_current_user(request):
+            return HTMLResponse(status_code=401)
+        selected = levels if levels is not None else ([] if filtered else log_buffer.LOG_LEVELS)
+        # Page boundaries are stable while a running job appends new messages.
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT timestamp AS ts, level, message AS msg FROM job_logs WHERE job_id=? ORDER BY id LIMIT 200 OFFSET ?",
+                (job_id, (page - 1) * 200),
+            ).fetchall()
+        return templates.TemplateResponse(request=request, name="partials/exec_log_lines.html", context={
+            "lines": [dict(row) for row in rows if row["level"] in selected], "has_logs": bool(rows),
+        })
+
+    @router.get("/jobs/{job_id}/download")
+    async def job_download(request: Request, job_id: int):
+        if not get_current_user(request):
+            return RedirectResponse("/login", status_code=302)
+        with get_db() as conn:
+            if not conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone():
+                return HTMLResponse(status_code=404)
+        def stream():
+            with get_db() as conn:
+                rows = conn.execute("SELECT * FROM job_logs WHERE job_id=? ORDER BY id", (job_id,))
+                for row in rows:
+                    yield f"{row['timestamp']} UTC [{row['level']}] {row['message']}\n"
+        return StreamingResponse(stream(), media_type="text/plain", headers={
+            "Content-Disposition": f'attachment; filename="kmm-job-{job_id}.log"',
+        })
 
     return router

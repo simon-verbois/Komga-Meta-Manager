@@ -153,16 +153,16 @@ def test_log_buffer_filtering():
     logger.debug("Debug message")
     logger.warning("Warning message")
 
-    lines_without_debug = log_buffer.get_lines(include_debug=False)
+    lines_without_debug = log_buffer.get_lines()
     assert any("Informational message" in entry["msg"] for entry in lines_without_debug)
     assert any("Warning message" in entry["msg"] for entry in lines_without_debug)
     assert not any("Debug message" in entry["msg"] for entry in lines_without_debug)
 
-    lines_with_debug = log_buffer.get_lines(include_debug=True)
+    lines_with_debug = log_buffer.get_lines(levels=log_buffer.LOG_LEVELS)
     assert any("Debug message" in entry["msg"] for entry in lines_with_debug)
 
     log_buffer.clear_buffer()
-    assert len(log_buffer.get_lines(include_debug=True)) == 0
+    assert len(log_buffer.get_lines(levels=log_buffer.LOG_LEVELS)) == 0
 
     logging.getLogger().removeHandler(handler)
 
@@ -173,14 +173,14 @@ def test_log_buffer_filtering():
 
 def test_i18n_translation():
     i18n.set_locale("en")
-    assert i18n.t("nav.dashboard") == "Dashboard"
+    assert i18n.t("nav.home") == "Home"
     assert i18n.t("common.save") == "Save"
 
     # Missing key falls back to key itself
     assert i18n.t("unknown.key.foo") == "unknown.key.foo"
 
     # Parameter substitution
-    msg = i18n.t("dashboard.watcher.interval", n=15)
+    msg = i18n.t("home.watching", n=15)
     assert "15" in msg
 
 
@@ -191,15 +191,32 @@ def test_logging_reload_does_not_duplicate_handler():
     root = logging.getLogger()
     previous_level = root.level
     previous_handlers = list(root.handlers)
+    previous_handler_state = [(handler, handler.level, handler.formatter) for handler in root.handlers]
+    application_logger = logging.getLogger("modules")
+    previous_application_level = application_logger.level
     try:
         setup_logging(False)
         setup_logging(True)
         setup_logging(False)
         assert sum(isinstance(h, log_buffer.BufferHandler) for h in root.handlers) == 1
         assert root.level == logging.INFO
+        assert root.handlers[0].level == logging.INFO
+        logging.getLogger("modules.debug_capture").debug("Debug available directly in Activity")
+        assert any(entry["msg"] == "Debug available directly in Activity" for entry in log_buffer.get_lines(levels=["DEBUG"]))
+        assert not any(entry["msg"] == "Debug available directly in Activity" for entry in log_buffer.get_lines())
+        message = "A long plain log message " * 10
+        record = logging.LogRecord("test", logging.INFO, "", 0, message, (), None)
+        rendered = root.handlers[0].formatter.format(record)
+        assert rendered.endswith(message)
+        assert "\n" not in rendered
+        assert "|" not in rendered
     finally:
         root.handlers[:] = previous_handlers
         root.setLevel(previous_level)
+        application_logger.setLevel(previous_application_level)
+        for handler, handler_level, formatter in previous_handler_state:
+            handler.setLevel(handler_level)
+            handler.setFormatter(formatter)
 
 
 def test_config_migration_and_database_reload(tmp_path, monkeypatch, app_config):
@@ -220,3 +237,24 @@ def test_config_migration_and_database_reload(tmp_path, monkeypatch, app_config)
     config_store.update_config(None)
     assert config_store.load_config_from_db() == loaded
     assert any(e["action"] == "MIGRATION" for e in db.get_audit_log())
+
+
+def test_log_buffer_separates_metadata_and_preserves_tracebacks():
+    import logging
+    import sys
+
+    handler = log_buffer.install_handler()
+    try:
+        handler.emit(logging.LogRecord("test", logging.INFO, "", 0, "Configuration loaded.", (), None))
+        try:
+            raise ValueError("Example failure")
+        except ValueError:
+            handler.emit(logging.LogRecord("test", logging.ERROR, "", 0, "Job failed", (), sys.exc_info()))
+        entries = log_buffer.get_lines()
+        assert entries[0]["msg"] == "Configuration loaded."
+        assert entries[0]["level"] == "INFO"
+        assert entries[0]["ts"]
+        assert entries[1]["msg"].startswith("Job failed\nTraceback")
+        assert "ValueError: Example failure" in entries[1]["msg"]
+    finally:
+        logging.getLogger().removeHandler(handler)

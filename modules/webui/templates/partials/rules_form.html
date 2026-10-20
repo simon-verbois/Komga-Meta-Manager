@@ -1,0 +1,32 @@
+{# Shared by Settings → Defaults and each library. Expects `rules` (choices) and `processing`. #}
+<fieldset class="rule-table">
+  <legend class="sr-only">{{ t('rules.fields_legend') }}</legend>
+  <div class="rule-row rule-head" aria-hidden="true">
+    <span>{{ t('rules.col.field') }}</span><span>{{ t('rules.col.action') }}</span>
+  </div>
+  {% for name in ['summary', 'publisher', 'genres', 'status', 'cover_image', 'link', 'writers', 'pencillers', 'score', 'language', 'reading_direction'] %}
+    {% set fillable = name not in ['language', 'reading_direction'] %}
+    <div class="rule-row" role="radiogroup" aria-labelledby="rule-{{ name }}-label">
+      <span class="rule-label" id="rule-{{ name }}-label">{{ t('field.' ~ name) }}</span>
+      <span class="segmented">
+        {% for choice in (['keep', 'fill', 'remove'] if fillable else ['keep', 'remove']) %}
+          <input type="radio" id="rule-{{ name }}-{{ choice }}" name="rule_{{ name }}" value="{{ choice }}"{% if rules[name] == choice %} checked{% endif %}>
+          <label for="rule-{{ name }}-{{ choice }}" class="segment segment-{{ choice }}">{{ t('rules.choice.' ~ choice) }}</label>
+        {% endfor %}
+      </span>
+    </div>
+  {% endfor %}
+</fieldset>
+<p class="help">{{ t('rules.choices_help') }}</p>
+<div class="form-grid rule-policies">
+  <fieldset class="radio-group">
+    <legend>{{ t('rules.existing') }}</legend>
+    <label class="check-row"><input type="radio" name="existing_values" value="keep"{% if not processing.get('overwrite_existing') %} checked{% endif %}><span><span class="check-title">{{ t('rules.existing.keep') }}</span><span class="help">{{ t('rules.existing.keep_help') }}</span></span></label>
+    <label class="check-row"><input type="radio" name="existing_values" value="replace"{% if processing.get('overwrite_existing') %} checked{% endif %}><span><span class="check-title">{{ t('rules.existing.replace') }}</span><span class="help">{{ t('rules.existing.replace_help') }}</span></span></label>
+  </fieldset>
+  <fieldset class="radio-group">
+    <legend>{{ t('rules.locked') }}</legend>
+    <label class="check-row"><input type="radio" name="locked_fields" value="respect"{% if not processing.get('force_unlock') %} checked{% endif %}><span><span class="check-title">{{ t('rules.locked.respect') }}</span><span class="help">{{ t('rules.locked.respect_help') }}</span></span></label>
+    <label class="check-row"><input type="radio" name="locked_fields" value="change"{% if processing.get('force_unlock') %} checked{% endif %}><span><span class="check-title">{{ t('rules.locked.change') }}</span><span class="help">{{ t('rules.locked.change_help') }}</span></span></label>
+  </fieldset>
+</div>

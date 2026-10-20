@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from modules.webui import log_buffer as _log_buffer
-from modules.webui.routes.dashboard import get_job_state
+from modules.job_queue import get_job_queue
 
 from modules.webui.db import init_db
 from modules.webui.config_store import (
@@ -32,16 +32,14 @@ from modules.webui.config_store import (
     get_config,
 )
 from modules.config import AppConfig
-from modules.processor import ProcessingResult, process_libraries, watch_for_new_series
+from modules.processor import ProcessingResult, watch_for_new_series
 from modules.komga_client import KomgaClient
-from modules.providers import get_providers
-from modules.translators import get_translator
+from modules.workflow import automation_snapshot, run_workflow
 from modules.scheduler import Scheduler
-from modules.utils import FrameFormatter, log_frame
 from modules.version import get_version
 
 PROCESSING_LOCK = threading.RLock()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("modules.main")
 READINESS_FILE = Path("/tmp/kmm-ready")
 SHUTDOWN_EVENT = threading.Event()
 # Fired when a config reload should restart scheduler/watcher
@@ -55,17 +53,13 @@ CONFIG_RELOAD_EVENT = threading.Event()
 def setup_logging(debug: bool = False) -> None:
     """Configures the root logger and installs the Web UI buffer handler."""
     level = logging.DEBUG if debug else logging.INFO
-    if debug:
-        formatter = FrameFormatter(
-            '%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-        )
-    else:
-        formatter = FrameFormatter(
-            '%(asctime)s [%(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-        )
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     logging.getLogger().setLevel(level)
+    # Collect application debug entries for Activity independently of console verbosity.
+    logging.getLogger("modules").setLevel(logging.DEBUG)
     logging.basicConfig(
         level=level,
         handlers=[logging.StreamHandler()],
@@ -74,6 +68,7 @@ def setup_logging(debug: bool = False) -> None:
     )
     handler = logging.getLogger().handlers[0]
     handler.setFormatter(formatter)
+    handler.setLevel(level)
 
     # Install the Web UI circular buffer handler
     _log_buffer.install_handler()
@@ -92,46 +87,26 @@ def setup_logging(debug: bool = False) -> None:
 # ---------------------------------------------------------------------------
 
 def display_header() -> None:
-    """Displays ASCII header information in log format."""
-    version = get_version()
-
-    docker_str = ' (Docker)' if os.path.exists('/.dockerenv') else ''
-    platform_str = platform.platform()
-
+    """Log a concise startup event and keep system diagnostics at debug level."""
+    docker_str = " (Docker)" if os.path.exists("/.dockerenv") else ""
+    logger.info("Komga Meta Manager %s%s started.", get_version(), docker_str)
+    logger.debug("Platform: %s", platform.platform())
     try:
-        total_mem = int(psutil.virtual_memory().total / (1024 ** 3))
-        avail_mem = int(psutil.virtual_memory().available / (1024 ** 3))
-        nice = psutil.Process().nice()
-        prio_str = 'high' if nice < 0 else ('low' if nice > 0 else 'normal')
+        memory = psutil.virtual_memory()
+        logger.debug(
+            "Memory: %s GB total, %s GB available; process priority: %s.",
+            int(memory.total / (1024 ** 3)), int(memory.available / (1024 ** 3)), psutil.Process().nice(),
+        )
     except (ImportError, AttributeError):
-        total_mem = avail_mem = 0
-        prio_str = 'unknown'
-
-    logging.info("|====================================================================================================|")
-    logging.info("|                                                                                                    |")
-    logging.info("|                         _  __                      __  __     _                                    |")
-    logging.info(r"|                         | |/ /___ _ __  __ _ __ _  |  \/  |___| |_ __ _                            |")
-    logging.info(r"|                         | ' \/ _ \ '  \/ _` / _` | | |\/| / -_)  _/ _` |                           |")
-    logging.info(r"|                         |_|\_\___/_|_|_\__, \__,_| |_|  |_\___|\_\_\__,_|                           |")
-    logging.info("|                                         |___/                                                      |")
-    logging.info("|                                         M  A  N  A  G  E  R                                        |")
-    logging.info("|                                                                                                    |")
-    log_frame("Version: {}{}".format(version, docker_str), 'left')
-    log_frame("Platform: {}".format(platform_str), 'left')
-    log_frame("Total Memory: {} GB".format(total_mem), 'left')
-    log_frame("Available Memory: {} GB".format(avail_mem), 'left')
-    log_frame("Process Priority: {}".format(prio_str), 'left')
-    logging.info("|                                                                                                    |")
-    logging.info("|====================================================================================================|")
-    log_frame("Web UI available at http://0.0.0.0:8765", 'center')
-    logging.info("|====================================================================================================|")
+        logger.debug("System diagnostics unavailable.")
+    logger.info("Web UI available at http://0.0.0.0:8765")
 
 
 # ---------------------------------------------------------------------------
 # Web UI server thread
 # ---------------------------------------------------------------------------
 
-def start_webui_thread(run_job_fn) -> threading.Thread:
+def start_webui_thread() -> threading.Thread:
     """Start the FastAPI/uvicorn server in a daemon thread."""
     from modules.webui.app import create_app
     import uvicorn
@@ -142,7 +117,7 @@ def start_webui_thread(run_job_fn) -> threading.Thread:
         logger.info("Config reloaded from Web UI — signalling restart.")
         CONFIG_RELOAD_EVENT.set()
 
-    app = create_app(run_job_fn=run_job_fn, reload_callback=_reload_callback)
+    app = create_app(reload_callback=_reload_callback)
 
     def _serve():
         config = uvicorn.Config(
@@ -168,28 +143,19 @@ def start_webui_thread(run_job_fn) -> threading.Thread:
 def run_job_and_save_cache(config: AppConfig) -> ProcessingResult:
     """Wrapper that ensures the translator cache is saved after execution."""
     with PROCESSING_LOCK:
-        state = get_job_state()
-        state.start()
         result: Optional[ProcessingResult] = None
         try:
-            result = process_libraries(config, stop_event=SHUTDOWN_EVENT)
+            result = run_workflow(config, stop_event=SHUTDOWN_EVENT)
             return result
         finally:
-            try:
-                translator = result.translator if result else None
-                if translator and hasattr(translator, 'save_cache_to_disk'):
-                    translator.save_cache_to_disk()
-            finally:
-                state.finish(bool(result and result.success))
+            translator = result.translator if result else None
+            if translator and hasattr(translator, 'save_cache_to_disk'):
+                translator.save_cache_to_disk()
 
 
 def initialize_watcher_series(komga_client: 'KomgaClient', target_libraries: dict) -> dict:
     """Initialize the watcher: scan existing series in all target libraries."""
     known_series = {}
-    logging.info("|                                                                                                    |")
-    logging.info("|====================================================================================================|")
-    log_frame("Watcher", 'center')
-    logging.info("|====================================================================================================|")
     logger.info("Initializing watcher: scanning existing series...")
     for lib_name, lib_id in target_libraries.items():
         series_list = komga_client.get_series_in_library(lib_id, lib_name)
@@ -207,7 +173,7 @@ def initialize_scheduler(config: AppConfig) -> Optional[Scheduler]:
     run_time = config.system.scheduler.run_at
     logging.info(f"Scheduler is enabled. Job will run every day at {run_time}.")
 
-    scheduler = Scheduler(config, run_job_and_save_cache)
+    scheduler = Scheduler(config, lambda cfg: get_job_queue().enqueue(automation_snapshot(cfg), source="scheduler"))
 
     next_wait = scheduler.calculate_job_wait_seconds()
     next_run_datetime = datetime.now() + timedelta(seconds=next_wait)
@@ -240,28 +206,6 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
     cache_dir = Path("/config/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    components.metadata_provider = get_providers(config.providers, cache_dir)
-    if not components.metadata_provider:
-        logging.error("Failed to initialize provider for watcher. Watcher will be disabled.")
-        return components
-
-    if config.translation and config.translation.enabled:
-        translator_provider = config.translation.provider.lower()
-        translator_kwargs = {}
-        if translator_provider == 'deepl':
-            if config.translation.deepl:
-                translator_kwargs['config'] = config.translation.deepl
-            else:
-                logging.error("DeepL provider selected but config missing.")
-                translator_provider = None
-        if translator_provider:
-            components.translator = get_translator(translator_provider, **translator_kwargs)
-            if components.translator:
-                logger.info("Watcher translation initialized.")
-            else:
-                logger.error("Failed to initialize translator for watcher.")
-                return WatcherComponents()
-
     components.komga_client = KomgaClient(config.komga)
     all_libraries = components.komga_client.get_libraries()
     if not all_libraries:
@@ -289,10 +233,6 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
     components.initialized = True
 
     if has_processed:
-        logging.info("|                                                                                                    |")
-        logging.info("|====================================================================================================|")
-        log_frame("Watcher", 'center')
-        logging.info("|====================================================================================================|")
         logger.info(f"Watcher: Monitoring resumed, next check in {config.system.watcher.polling_interval_minutes} minutes.")
 
     return components
@@ -300,7 +240,11 @@ def initialize_watcher(config: AppConfig) -> WatcherComponents:
 
 def _watch_exclusively(*args, **kwargs):
     with PROCESSING_LOCK:
-        return watch_for_new_series(*args, **kwargs)
+        config = args[0]
+        return watch_for_new_series(
+            *args, **kwargs,
+            enqueue_series=lambda ids: get_job_queue().enqueue(automation_snapshot(config), source="watcher", series_ids=ids),
+        )
 
 
 def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponents) -> bool:
@@ -316,10 +260,6 @@ def watcher_poll_function(config: AppConfig, watcher_components: WatcherComponen
     )
 
     if has_processed:
-        logging.info("|                                                                                                    |")
-        logging.info("|====================================================================================================|")
-        log_frame("Watcher", 'center')
-        logging.info("|====================================================================================================|")
         logger.info(f"Watcher: Monitoring resumed, next check in {config.system.watcher.polling_interval_minutes} minutes.")
 
     return has_processed
@@ -370,11 +310,11 @@ def initialize_application() -> Optional[AppConfig]:
     setup_logging(debug)
     display_header()
     if app_config:
-        log_frame("Configuration loaded from database.", 'left')
-        if app_config.system.dry_run:
-            logging.warning("Dry-run mode is enabled. No changes will be made to Komga.")
+        logger.info("Configuration loaded from database.")
+        if not app_config.system.auto_publish:
+            logging.info("Automatic runs fetch metadata into KMM only; publish reviewed changes from the Web UI.")
     else:
-        log_frame("No configuration found — complete setup at http://0.0.0.0:8765", 'left')
+        logger.info("No configuration found — complete setup at http://0.0.0.0:8765")
     return app_config
 
 
@@ -382,10 +322,7 @@ def run_once_mode(config: AppConfig) -> int:
     """Execute the application in run-once mode."""
     logging.info("Scheduler and watcher disabled. Running the job once.")
     result = run_job_and_save_cache(config=config)
-    logging.info("|                                                                                                    |")
-    logging.info("|====================================================================================================|")
-    log_frame("Komga Meta Manager Finished", 'center')
-    logging.info("|====================================================================================================|")
+    logger.info("Processing run finished (success=%s).", result.success)
     return 0 if result.success else 1
 
 
@@ -430,7 +367,7 @@ def main() -> int:
         signal.signal(signal.SIGTERM, request_shutdown)
         signal.signal(signal.SIGINT, request_shutdown)
 
-        start_webui_thread(run_job_and_save_cache)
+        start_webui_thread()
 
         # --- Wait for config if not yet configured ---
         if app_config is None:
@@ -516,6 +453,8 @@ def main() -> int:
     except Exception as e:
         logging.error(f"A critical error occurred during setup: {e}", exc_info=True)
         return 1
+    finally:
+        get_job_queue().close()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon, alert, job_title, job_status, job_counts with context %}
+{% block title %}{{ t('jobs.title', id=job.id) }} — Komga Meta Manager{% endblock %}
+{% block back %}<a class="back-link" href="/logs">{{ icon('chevron-left') }}{{ t('nav.activity') }}</a>{% endblock %}
+{% block heading %}{{ job_title(job) }} <span class="heading-id">#{{ job.id }}</span>{% endblock %}
+{% block content %}
+{% set running = job.status in ['queued', 'running', 'stopping'] %}
+{% if message %}{{ alert('error', t(message)) }}{% endif %}
+<section class="panel job-outcome"{% if running %} hx-get="{{ request.url.path }}" hx-trigger="every 3s" hx-select="#main-content > *" hx-target="#main-content" hx-swap="innerHTML"{% endif %}>
+  <div class="job-outcome-head">
+    {{ job_status(job) }}
+    <span class="row-meta">{{ job.libraries | join(', ') }}{% if job.series_count %} · {{ plural(job.series_count, 'job.series_one', 'job.series_many') }}{% endif %} · {{ t('queue.source.' ~ job.source) }}</span>
+  </div>
+  <p class="job-outcome-text">{{ t('job.explain.' ~ job.action) }}{% if job.replace_edits %} {{ t('job.explain.replace') }}{% endif %}{% if job.simulated %} {{ t('job.explain.simulated') }}{% endif %}</p>
+  <dl class="fact-grid">
+    <div><dt>{{ t('job.result') }}</dt><dd>{% if job.status == 'queued' %}{{ t('job.waiting') }}{% else %}{{ job_counts(job) }}{% endif %}</dd></div>
+    <div><dt>{{ t('queue.started') }}</dt><dd>{% if job.started_at %}<time datetime="{{ job.started_at }}" data-local-time>{{ job.started_at[:16] | replace('T', ' ') }}</time>{% else %}—{% endif %}</dd></div>
+    <div><dt>{{ t('queue.finished') }}</dt><dd>{% if job.finished_at %}<time datetime="{{ job.finished_at }}" data-local-time>{{ job.finished_at[:16] | replace('T', ' ') }}</time>{% else %}—{% endif %}</dd></div>
+    <div><dt>{{ t('job.problems') }}</dt><dd>{% if problems %}<span class="warning-text">{{ problems }}</span>{% else %}0{% endif %}</dd></div>
+  </dl>
+  {% if job.status == 'succeeded' and job.action == 'fetch' and not job.simulated %}
+    <div class="next-hint">{{ icon('review') }}<span>{{ t('job.next.fetch') }}</span><a class="button button-primary button-small" href="/review">{{ t('home.review') }}</a></div>
+  {% elif job.status == 'failed' %}
+    <div class="next-hint danger">{{ icon('info') }}<span>{{ t('queue.failed_help') }}</span></div>
+  {% elif job.status == 'interrupted' %}
+    <div class="next-hint">{{ icon('info') }}<span>{{ t('queue.interrupted_help') }}</span></div>
+  {% elif job.status == 'stopping' %}
+    <div class="next-hint">{{ icon('info') }}<span>{{ t('queue.stopping_help') }}</span></div>
+  {% endif %}
+  <div class="button-row">
+    {% if job.status in ['queued', 'running'] %}
+      <form method="post" action="/jobs/{{ job.id }}/cancel"><button type="submit" class="button button-secondary">{{ t('queue.cancel') if job.status == 'queued' else t('queue.stop') }}</button></form>
+    {% endif %}
+    {% if job.status in ['running', 'stopping'] %}
+      <form method="post" action="/jobs/{{ job.id }}/kill" data-confirm="{{ t('queue.kill_confirm', id=job.id) }}"><button type="submit" class="button button-danger">{{ t('queue.kill') }}</button></form>
+    {% endif %}
+    {% if job.status in ['failed', 'cancelled', 'killed', 'interrupted'] %}
+      <form method="post" action="/jobs/{{ job.id }}/retry" data-confirm="{{ t('queue.retry_confirm', id=job.id, libraries=job.libraries | join(', ')) }}{% if job.action != 'fetch' and not job.simulated %} {{ t('queue.retry_live') }}{% endif %}"><button type="submit" class="button button-secondary">{{ icon('refresh') }}{{ t('queue.retry') }}</button></form>
+    {% endif %}
+  </div>
+</section>
+<details class="panel disclosure log-panel"{% if job.status in ['failed', 'running', 'stopping', 'interrupted'] %} open{% endif %}>
+  <summary>{{ t('jobs.logs') }} <span class="help">({{ plural(log_count, 'job.lines_one', 'job.lines_many') }})</span></summary>
+  <div class="log-panel-actions">
+    <p class="help">{{ t('jobs.output_note') }}</p>
+    <a class="button button-secondary button-small" href="/logs/jobs/{{ job.id }}/download">{{ icon('download') }}{{ t('jobs.download') }}</a>
+  </div>
+  {% if log_count %}
+    <div class="log-viewer" tabindex="0" role="region" aria-label="{{ t('jobs.logs') }}">
+      <div hx-get="/logs/jobs/{{ job.id }}/lines?page={{ total_pages }}" hx-trigger="load" hx-swap="innerHTML"><span role="status">{{ t('ui.loading') }}</span></div>
+    </div>
+    {% if total_pages > 1 %}<p class="help">{{ t('jobs.last_page', total=total_pages) }}</p>{% endif %}
+  {% else %}
+    <p class="help">{{ t('jobs.empty_waiting') if running else t('jobs.empty') }}</p>
+  {% endif %}
+</details>
+{% endblock %}

@@ -243,3 +243,50 @@ def test_lower_priority_provider_fills_only_missing_metadata(series, app_config)
         },
     ]
     publisher_provider.search.assert_called_once_with("Example Manga")
+
+def test_targeted_job_preserves_library_scope_exclusions_and_reports_progress(series, app_config):
+    excluded = series.model_copy(update={"id": "excluded", "name": "Excluded"})
+    unrelated = series.model_copy(update={"id": "unrelated"})
+    app_config.processing.exclude_series = ["Excluded"]
+    client = Mock()
+    client.get_libraries.return_value = [
+        KomgaLibrary(id="library-1", name="Manga"), KomgaLibrary(id="library-2", name="Disabled"),
+    ]
+    client.get_series_in_library.return_value = [series, excluded, unrelated]
+    progress = []
+    with (
+        patch("modules.processor.Path.mkdir"),
+        patch("modules.processor.KomgaClient", return_value=client),
+        patch("modules.processor.get_providers", return_value=Mock()),
+        patch("modules.processor.process_single_series") as process,
+    ):
+        result = process_libraries(
+            app_config, series_ids=[series.id, "excluded"],
+            progress_callback=lambda r: progress.append((r.processed, r.skipped)),
+        )
+    assert result.processed == 1
+    assert result.skipped == 1
+    assert progress == [(1, 0), (1, 1)]
+    process.assert_called_once()
+    assert process.call_args.args[0].id == series.id
+    client.get_series_in_library.assert_called_once_with("library-1", "Manga")
+
+
+def test_stop_after_current_series_prevents_subsequent_writes(series, app_config):
+    import threading
+
+    app_config.system.dry_run = False
+    stop = threading.Event()
+    client = Mock()
+    client.get_libraries.return_value = [KomgaLibrary(id="library-1", name="Manga")]
+    client.get_series_in_library.return_value = [series, series.model_copy(update={"id": "next"})]
+    provider = Mock()
+    with (
+        patch("modules.processor.Path.mkdir"),
+        patch("modules.processor.KomgaClient", return_value=client),
+        patch("modules.processor.get_providers", return_value=provider),
+        patch("modules.processor.process_single_series", side_effect=lambda *_: stop.set()) as process,
+    ):
+        assert process_libraries(app_config, stop_event=stop).processed == 1
+    process.assert_called_once()
+    provider.save_cache.assert_called_once()

@@ -1,0 +1,184 @@
+{% macro icon(name, size='') -%}
+  <svg class="icon {{ size }}"
+       viewBox="0 0 24 24"
+       fill="none"
+       stroke="currentColor"
+       stroke-width="1.7"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       aria-hidden="true">
+    {% if name == "books" %}
+      <path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l4-1 4 15-4 1z" />
+    {% elif name == "chevron-down" %}
+      <path d="m6 9 6 6 6-6" />
+    {% elif name == "chevron-up" %}
+      <path d="m6 15 6-6 6 6" />
+    {% elif name == "dashboard" %}
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    {% elif name == "komga" %}
+      <path d="M3 5h7l2 2h9v13H3zM3 5V3h7l2 2" />
+    {% elif name == "providers" %}
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="5" cy="18" r="2" />
+      <circle cx="19" cy="18" r="2" />
+      <path d="M12 7v5M5 16v-4h14v4" />
+    {% elif name == "processing" %}
+      <path d="M4 7h16M4 17h16" />
+      <circle cx="9" cy="7" r="3" fill="var(--surface)" />
+      <circle cx="15" cy="17" r="3" fill="var(--surface)" />
+    {% elif name == "translation" %}
+      <path d="M3 5h12M9 3v2M5 5c1 6 6 9 9 10M13 5c-1 6-6 9-10 10M13 21l4-10 4 10M15 17h4" />
+    {% elif name == "system" %}
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    {% elif name == "logs" %}
+      <path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5" />
+    {% elif name == "arrow" %}
+      <path d="M5 12h14m-5-5 5 5-5 5" />
+    {% elif name == "play" %}
+      <path d="m9 5 11 7-11 7z" />
+    {% elif name == "preview" %}
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    {% elif name == "warning" %}
+      <path d="m12 3 10 18H2zM12 9v5m0 3h.01" />
+    {% elif name == "check" %}
+      <path d="m5 12 4 4L19 6" />
+    {% elif name == "shield" %}
+      <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6" />
+    {% elif name == "user" %}
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+    {% elif name == "logout" %}
+      <path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4" />
+    {% elif name == "menu" %}
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    {% elif name == "refresh" %}
+      <path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M18 18A8 8 0 0 1 5 16" />
+    {% elif name == "home" %}
+      <path d="m3 11 9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5" />
+    {% elif name == "review" %}
+      <path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h5" />
+    {% elif name == "download" %}
+      <path d="M12 4v11m-5-5 5 5 5-5M5 20h14" />
+    {% elif name == "upload" %}
+      <path d="M12 20V9m-5 5 5-5 5 5M5 4h14" />
+    {% elif name == "chevron-left" %}
+      <path d="m15 6-6 6 6 6" />
+    {% elif name == "chevron-right" %}
+      <path d="m9 6 6 6-6 6" />
+    {% elif name == "chevron-up" %}
+      <path d="m6 15 6-6 6 6" />
+    {% elif name == "close" %}
+      <path d="M6 6l12 12M18 6 6 18" />
+    {% elif name == "skip" %}
+      <circle cx="12" cy="12" r="9" />
+      <path d="m6 6 12 12" />
+    {% elif name == "lock" %}
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    {% elif name == "fetch" %}
+      <path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4" />
+    {% else %}
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v4m0 4h.01" />
+    {% endif %}
+  </svg>
+{%- endmacro %}
+{% macro page_header(title, description, eyebrow='') -%}
+  <header class="page-header">
+    {% if eyebrow %}
+      <p class="eyebrow">{{ eyebrow }}</p>
+    {% endif %}
+    <h1>{{ title }}</h1>
+    <p class="page-description">{{ description }}</p>
+  </header>
+{%- endmacro %}
+{% macro nav_link(path, label, glyph, count=0) -%}
+  {% set current = request.url.path == path or (path != '/' and request.url.path.startswith(path)) %}
+  <a href="{{ path }}" class="nav-item{% if current %} active{% endif %}"{% if current %} aria-current="page"{% endif %}>
+    {{ icon(glyph) }}<span class="nav-text">{{ label }}</span>
+    {% if count %}<span class="nav-count" aria-label="{{ t('nav.review_count', n=count) }}">{{ count }}</span>{% endif %}
+  </a>
+{%- endmacro %}
+{% macro job_title(job) -%}
+  {{ t('job.action.' ~ job.action) }}{% if job.simulated %} · {{ t('job.simulated') }}{% endif %}
+{%- endmacro %}
+{% macro job_status(job) -%}
+  {% set tone = {'succeeded': 'success', 'failed': 'danger', 'running': 'active', 'stopping': 'active', 'queued': 'neutral'}.get(job.status, 'neutral') %}
+  <span class="badge badge-{{ tone }}">{% if tone == 'active' %}<span class="status-dot" aria-hidden="true"></span>{% endif %}{{ t('queue.status.' ~ job.status) }}</span>
+{%- endmacro %}
+{% macro job_counts(job) -%}
+  {% if job.action == 'publish' %}{{ plural(job.processed, 'job.published_one', 'job.published_many') }}{% else %}{{ plural(job.processed, 'job.processed_one', 'job.processed_many') }}{% endif %}{% if job.failed %} · <span class="error-text">{{ t('job.failed_n', n=job.failed) }}</span>{% endif %}{% if job.skipped %} · {{ t('job.skipped_n', n=job.skipped) }}{% endif %}
+{%- endmacro %}
+{% macro field(name, label, value='', type='text', help='', required=false, min=none, max=none, autocomplete='off') -%}
+  {% set validation = namespace(message='') %}
+  {% if error is defined and error is mapping %}
+    {% for key, message in error.items() %}
+      {% if name == key or name.endswith('_' ~ key) %}{% set validation.message = message %}{% endif %}
+    {% endfor %}
+  {% endif %}
+  <div class="field">
+    <label for="{{ name }}">{{ label }}</label>
+    <input id="{{ name }}"
+           name="{{ name }}"
+           type="{{ type }}"
+           value="{{ value }}"
+           autocomplete="{{ autocomplete }}"
+           {% if type in ['text', 'url', 'password'] %}spellcheck="false"{% endif %}
+           {% if required %}required{% endif %}
+           {% if min is not none %} min="{{ min }}"{% endif %}
+           {% if max is not none %} max="{{ max }}"{% endif %}
+           {% if validation.message %}aria-invalid="true"{% endif %}
+           {% if help or validation.message %}aria-describedby="{% if help %}{{ name }}-help {% endif %}{% if validation.message %}{{ name }}-error{% endif %}"{% endif %}>
+    {% if help %}
+      <p id="{{ name }}-help" class="help">{{ help }}</p>
+    {% endif %}
+    {% if validation.message %}<p id="{{ name }}-error" class="help error-text">{{ validation.message }}</p>{% endif %}
+  </div>
+{%- endmacro %}
+{% macro checkbox(name, label, checked=false, help='', value='1') -%}
+  <label class="check-row">
+    <input type="checkbox"
+           id="{{ name }}"
+           name="{{ name }}"
+           value="{{ value }}"
+           aria-labelledby="{{ name }}-label"
+           {% if help %}aria-describedby="{{ name }}-help"{% endif %}
+           {% if checked %}checked{% endif %}>
+    <span>
+      <span class="check-title" id="{{ name }}-label">{{ label }}</span>
+      {% if help %}
+        <span class="help" id="{{ name }}-help">{{ help }}</span>
+      {% endif %}
+    </span>
+  </label>
+{%- endmacro %}
+{% macro save_bar(help=none) -%}
+  <div class="save-bar">
+    <p class="help" data-save-status>{{ help or t("ui.save.help") }}</p>
+    <button class="button button-primary" type="submit">{{ icon("check") }}<span>{{ t("common.save") }}</span></button>
+  </div>
+{%- endmacro %}
+{% macro select(name, label, options, value, help='') -%}
+  <div class="field">
+    <label for="{{ name }}">{{ label }}</label>
+    <select id="{{ name }}" name="{{ name }}"{% if help %} aria-describedby="{{ name }}-help"{% endif %}>
+      {% for code, text in options %}<option value="{{ code }}"{% if code == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+    </select>
+    {% if help %}<p class="help" id="{{ name }}-help">{{ help }}</p>{% endif %}
+  </div>
+{%- endmacro %}
+{% macro switch(name, label, checked=false, help='') -%}
+  <label class="switch-row" for="{{ name }}">
+    <input type="checkbox" role="switch" id="{{ name }}" name="{{ name }}" value="1"{% if checked %} checked{% endif %}{% if help %} aria-describedby="{{ name }}-help"{% endif %}>
+    <span class="switch-track" aria-hidden="true"></span>
+    <span class="switch-text"><span class="check-title">{{ label }}</span>{% if help %}<span class="help" id="{{ name }}-help">{{ help }}</span>{% endif %}</span>
+  </label>
+{%- endmacro %}
+{% macro alert(kind, message) -%}
+  <div class="alert alert-{{ kind }}" role="{{ 'alert' if kind == 'error' else 'status' }}"{% if kind == 'error' %} tabindex="-1" data-form-error{% endif %}>{{ icon('check' if kind == 'success' else 'info') }}<div>{{ message }}</div></div>
+{%- endmacro %}

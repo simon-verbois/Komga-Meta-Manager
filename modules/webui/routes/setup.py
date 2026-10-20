@@ -53,7 +53,7 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
 
         if error:
             return templates.TemplateResponse(
-                request=request, name="setup.html", context={"error": error}
+                request=request, name="setup.html", context={"error": error, "username": username}
             )
 
         try:
@@ -64,7 +64,7 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
         logger.info("Setup complete. Account created for '%s'.", username.strip())
 
         token = create_session_token(username.strip())
-        response = RedirectResponse("/config/komga", status_code=302)
+        response = RedirectResponse("/settings?tab=connection", status_code=302)
         response.set_cookie(
             SESSION_COOKIE,
             token,

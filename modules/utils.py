@@ -2,9 +2,7 @@
 """
 Utility functions for the Manga Manager.
 """
-import logging
 import re
-import textwrap
 
 def clean_html(raw_html: str) -> str:
     """
@@ -51,63 +49,3 @@ def clean_description(raw_text: str) -> str:
     text = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', text)
     text = re.sub(r'[*_`~]+', '', text)
     return re.sub(r'\n{3,}', '\n\n', text).strip()
-
-
-class FrameFormatter(logging.Formatter):
-    def format(self, record):
-        formatted = super().format(record)
-        # Pad the levelname part to align messages
-        start_brk = formatted.find('[')
-        padded_length = 10
-        if start_brk != -1:
-            end_level = formatted.find('] ', start_brk)
-            if end_level != -1:
-                level_part = formatted[start_brk:end_level + 2]  # '[LEVEL] '
-                if len(level_part) < padded_length:
-                    padded_level_part = level_part.ljust(padded_length)
-                    formatted = formatted.replace(level_part, padded_level_part)
-        msg = record.getMessage()
-        if msg.startswith('center:'):
-            content = msg[7:].strip()
-            align = 'center'
-        elif msg.startswith('left:'):
-            content = msg[5:]
-            align = 'left'
-        elif msg.startswith('|') and msg.endswith('|'):
-            # already formatted frame line
-            content = None
-        else:
-            content = msg
-            align = 'left'
-        if content is not None:
-            if len(content) > 98:
-                lines = textwrap.wrap(content, width=98)
-            else:
-                lines = [content]
-            msg_parts = []
-            for line in lines:
-                if align == 'center':
-                    padded = line.center(100)
-                else:
-                    padded = (" " + line).ljust(100)
-                msg_parts.append(f"|{padded}|")
-            final_msg = "\n".join(msg_parts)
-        else:
-            # already formatted frame line
-            final_msg = msg
-        if start_brk != -1:
-            level_end = start_brk + padded_length
-        else:
-            level_end = formatted.rfind('] ') + 2
-        lines = final_msg.split('\n')
-        prefixed_lines = [formatted[:level_end] + line for line in lines]
-        return '\n'.join(prefixed_lines)
-
-def log_frame(msg, align='left'):
-    prefix = 'left:' if align == 'left' else 'center:'
-    if len(msg) > 98:
-        lines = textwrap.wrap(msg, width=98)
-    else:
-        lines = [msg]
-    for line in lines:
-        logging.info(prefix + line)

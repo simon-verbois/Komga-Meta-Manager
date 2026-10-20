@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon, alert with context %}
+{% block title %}{{ t('numbering.title') }} — Komga Meta Manager{% endblock %}
+{% block heading %}{{ t('numbering.title') }}{% endblock %}
+{% block back %}<a class="text-link" href="/review{% if library %}?library={{ library | urlencode }}{% endif %}{% if request.query_params.get('book') %}#review-book-{{ request.query_params.get('book') | urlencode }}{% endif %}">{{ icon('chevron-left') }}{{ t('nav.review') }}</a>{% endblock %}
+{% block content %}
+  <section class="panel">
+    <h2>{{ series.metadata.title }}</h2>
+    <p>{{ t('numbering.help') }}</p>
+    <p class="help">{{ t('numbering.naming_on') if naming_active else t('numbering.naming_off') }}</p>
+    {% if error %}{{ alert('error', t(error)) }}{% endif %}
+    {% if rows %}
+      <form method="post" data-numbering-form data-dirty-form>
+        <input type="hidden" name="version" value="{{ version }}">
+        <div class="numbering-fill">
+          <div class="field"><label for="numbering-first">{{ t('numbering.first') }}</label><input type="number" id="numbering-first" value="0" min="0" max="999999" step="1" aria-describedby="numbering-fill-help"></div>
+          <button type="button" class="button button-secondary" data-numbering-fill>{{ t('numbering.fill') }}</button>
+          <p class="help" id="numbering-fill-help">{{ t('numbering.fill_help') }}</p>
+          <p class="help" id="numbering-order-help">{{ t('numbering.order_help') }}</p>
+          <p class="help" role="status" aria-live="polite" data-numbering-status data-filled="{{ t('numbering.filled') }}" data-invalid="{{ t('numbering.invalid') }}" data-moved="{{ t('numbering.moved') }}"></p>
+        </div>
+        <ol class="numbering-books">
+          {% for book in rows %}
+            <li id="numbering-book-{{ book.id }}" data-numbering-book data-book-id="{{ book.id }}" data-book-title="{{ book.title }}">
+              <div class="numbering-book-title"><span class="row-meta" data-numbering-position data-label="{{ t('numbering.position') }}">{{ t('numbering.position', n=loop.index) }}</span><strong>{{ book.title }}</strong><span class="row-meta">{{ t('numbering.local_title', title=book.local_title) }}</span></div>
+              <input type="hidden" name="book_id" value="{{ book.id }}">
+              <div class="field"><label for="number-{{ loop.index }}">{{ t('numbering.number') }}<span class="sr-only"> — {{ book.title }}</span></label><input id="number-{{ loop.index }}" type="text" inputmode="decimal" name="number" value="{{ book.number }}" data-book-number autocomplete="off" aria-describedby="numbering-values-help"></div>
+              <div class="numbering-order-buttons" role="group" aria-label="{{ t('numbering.order_for', title=book.title) }}">
+                <button type="button" class="button button-secondary button-small" data-numbering-move="-1" aria-label="{{ t('numbering.up_for', title=book.title) }}" aria-describedby="numbering-order-help"{% if loop.first %} disabled{% endif %}>{{ icon('chevron-up') }}{{ t('numbering.up') }}</button>
+                <button type="button" class="button button-secondary button-small" data-numbering-move="1" aria-label="{{ t('numbering.down_for', title=book.title) }}" aria-describedby="numbering-order-help"{% if loop.last %} disabled{% endif %}>{{ icon('chevron-down') }}{{ t('numbering.down') }}</button>
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+        <p class="help" id="numbering-values-help">{{ t('numbering.values_help') }}</p>
+        <div class="save-bar"><p data-save-status role="status">{{ t('numbering.save_help') }}</p><button type="submit" class="button button-primary">{{ icon('check') }}{{ t('numbering.save') }}</button></div>
+      </form>
+    {% else %}<p>{{ t('numbering.empty') }}</p>{% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% from 'macros/ui.html' import icon with context %}
+{# Shared by Settings → Defaults and each library. Expects `sources` in priority order. #}
+<p class="help section-description">{{ t('sources.help') }}</p>
+<ol class="source-list" data-source-list aria-label="{{ t('sources.order') }}">
+  {% for source in sources %}
+    {% set name = source.name %}
+    <li class="source-row" data-source="{{ name }}">
+      <input type="hidden" name="source_order" value="{{ name }}">
+      <span class="source-rank" aria-hidden="true">{{ loop.index }}</span>
+      <label class="switch-row source-toggle" for="{{ name }}_enabled">
+        <input type="checkbox" role="switch" id="{{ name }}_enabled" name="{{ name }}_enabled" value="1"{% if source.get('enabled', true) %} checked{% endif %}>
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="check-title">{{ source.display }}</span>
+      </label>
+      <span class="source-move">
+        <button type="button" class="button button-icon button-quiet" data-move="up" aria-label="{{ t('sources.up', name=source.display) }}">{{ icon('chevron-up') }}</button>
+        <button type="button" class="button button-icon button-quiet" data-move="down" aria-label="{{ t('sources.down', name=source.display) }}">{{ icon('chevron-down') }}</button>
+      </span>
+      <details class="disclosure source-advanced">
+        <summary>{{ t('ui.advanced') }}</summary>
+        <div class="form-grid">
+          <div class="field">
+            <label for="{{ name }}_min_score">{{ t('sources.min_score') }}</label>
+            <input type="number" id="{{ name }}_min_score" name="{{ name }}_min_score" value="{{ source.get('min_score', 80) }}" min="0" max="100" aria-describedby="{{ name }}_min_score-help">
+            <p class="help" id="{{ name }}_min_score-help">{{ t('sources.min_score_help') }}</p>
+          </div>
+          <div class="field">
+            <label for="{{ name }}_preferred_language">{{ t('sources.language') }}</label>
+            <select id="{{ name }}_preferred_language" name="{{ name }}_preferred_language">
+              {% set current = language_value(source.get('preferred_language', 'en'), source_languages) %}
+              {% for code, label in language_options(source.get('preferred_language', 'en'), source_languages) %}<option value="{{ code }}"{% if code == current %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="{{ name }}_cache_ttl">{{ t('sources.cache') }}</label>
+            <input type="number" id="{{ name }}_cache_ttl" name="{{ name }}_cache_ttl" value="{{ (source.get('cache') or {}).get('ttl_hours', 168) }}" min="1" aria-describedby="{{ name }}_cache_ttl-help">
+            <p class="help" id="{{ name }}_cache_ttl-help">{{ t('sources.cache_help') }}</p>
+          </div>
+        </div>
+        <label class="check-row" for="{{ name }}_allow_adult"><input type="checkbox" id="{{ name }}_allow_adult" name="{{ name }}_allow_adult" value="1"{% if source.get('allow_adult') %} checked{% endif %}><span class="check-title">{{ t('sources.adult') }}</span></label>
+      </details>
+    </li>
+  {% endfor %}
+</ol>

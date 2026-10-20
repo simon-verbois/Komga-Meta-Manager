@@ -6,17 +6,17 @@ import re
 import threading
 import unicodedata
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Callable, List, Optional, Dict
 from dataclasses import dataclass
 
-from modules.config import AppConfig
+from modules.config import AppConfig, config_for_library
+from modules.book_titles import book_title
 from modules.komga_client import KomgaClient
 from modules.providers import ConfiguredProvider, ProviderChain, get_providers
 from modules.providers.base import MetadataProvider, MetadataProviderError
 from modules.translators import get_translator, Translator
 from modules.models import KomgaSeries, MetadataCandidate, MetadataRecord, KomgaBook
 from modules.utils import clean_description
-from modules.utils import log_frame
 from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
@@ -267,6 +267,7 @@ class GenericFieldHandler:
         is_locked = getattr(metadata, self.field_name + '_lock', False)
 
         if is_locked and not config.processing.force_unlock:
+            logger.info("Preserving locked %s on series %s (Force Unlock is off).", self.field_name, series.name)
             return None
 
         # Collection handlers implement additive/idempotent semantics and must
@@ -281,6 +282,7 @@ class GenericFieldHandler:
             should_process = should_remove_field(current_value, is_locked, config)
 
         if not should_process:
+            logger.debug("Preserving %s on series %s: existing value, overwrite=%s.", self.field_name, series.name, config.processing.overwrite_existing)
             return None
 
         # Generic processing logic
@@ -464,22 +466,64 @@ def should_update_field(current_value, is_locked: bool, config: AppConfig) -> bo
 def process_libraries(
     config: AppConfig,
     stop_event: Optional[threading.Event] = None,
+    series_ids: Optional[list[str]] = None,
+    progress_callback: Optional[Callable[[ProcessingResult], None]] = None,
+    book_ids: Optional[list[str]] = None,
+    client_factory=None,
 ) -> ProcessingResult:
     """
     Main processing function that iterates through libraries and series.
     Returns a structured outcome suitable for CLI exit codes and scheduling.
+    An optional series filter narrows processing within the enabled libraries.
     """
+    make_client = (lambda _: client_factory(config)) if client_factory else KomgaClient
     result = ProcessingResult()
+    selected_ids = set(series_ids) if series_ids is not None else None
     if not config.komga.libraries:
         logger.info("No libraries enabled. Nothing to process.")
+        return result
+
+    if config.library_settings:
+        client = make_client(config.komga)
+        try:
+            libraries = client.get_libraries()
+        finally:
+            client.session.close()
+        selected = [lib for lib in libraries if lib.name in config.komga.libraries]
+        if not selected:
+            result.success = False
+            logger.error("No enabled libraries are available in Komga.")
+        for library in selected:
+            if stop_event and stop_event.is_set():
+                break
+            effective = config_for_library(config, library.id)
+            effective.komga.libraries = [library.name]
+            def report_partial(partial):
+                if progress_callback:
+                    progress_callback(ProcessingResult(
+                        processed=result.processed + partial.processed,
+                        failed=result.failed + partial.failed,
+                        skipped=result.skipped + partial.skipped,
+                    ))
+            partial = process_libraries(effective, stop_event, series_ids, report_partial, book_ids, client_factory)
+            result.processed += partial.processed
+            result.failed += partial.failed
+            result.skipped += partial.skipped
+            result.success = result.success and partial.success
+            if partial.translator and hasattr(partial.translator, "save_cache_to_disk"):
+                partial.translator.save_cache_to_disk()
         return result
 
     cache_dir = Path("/config/cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    komga_client = KomgaClient(config.komga)
+    komga_client = make_client(config.komga)
     metadata_provider = get_providers(config.providers, cache_dir)
-    if not metadata_provider:
+    if metadata_provider is None or (
+        isinstance(metadata_provider, ProviderChain)
+        and not metadata_provider.entries
+        and config.processing.book_titles.mode == "off"
+    ):
         logger.error("Failed to initialize metadata providers. Aborting.")
         result.success = False
         return result
@@ -525,11 +569,7 @@ def process_libraries(
         if stop_event and stop_event.is_set():
             logger.info("Processing interrupted before the next library.")
             break
-        logging.info("|                                                                                                    |")
-        logging.info("|====================================================================================================|")
-        log_frame(f"Processing Library: {lib_name}", 'center')
-        logging.info("|====================================================================================================|")
-        #logger.info(f"---  '{lib_name}' (ID: {lib_id}) ---")
+        logger.info("Processing library: %s", lib_name)
         series_list = komga_client.get_series_in_library(lib_id, lib_name)
 
         if not series_list:
@@ -537,16 +577,25 @@ def process_libraries(
             continue
 
         for series in series_list:
+            if selected_ids is not None and series.id not in selected_ids:
+                continue
             if stop_event and stop_event.is_set():
                 logger.info("Processing interrupted before the next series.")
                 break
             if series.name in config.processing.exclude_series:
                 logger.info(f"Skipping series '{series.name}', excluded.")
                 result.skipped += 1
+                if progress_callback:
+                    progress_callback(result)
                 continue
 
             try:
-                process_single_series(series, config, komga_client, metadata_provider, translator)
+                if client_factory:
+                    komga_client.get_books_in_series(series.id, series.name)
+                if book_ids is None:
+                    process_single_series(series, config, komga_client, metadata_provider, translator)
+                else:
+                    process_single_series(series, config, komga_client, metadata_provider, translator, book_ids=book_ids)
                 result.processed += 1
             except Exception as e:
                 result.failed += 1
@@ -555,7 +604,9 @@ def process_libraries(
                     f"Error processing series '{series.name}': {e} - skipping to next series",
                     exc_info=config.system.debug,
                 )
-                continue
+            finally:
+                if progress_callback:
+                    progress_callback(result)
 
     if metadata_provider:
         metadata_provider.save_cache()
@@ -573,6 +624,7 @@ def watch_for_new_series(
     known_series: dict,
     metadata_provider,
     translator,
+    enqueue_series: Optional[Callable[[list[str]], None]] = None,
 ) -> WatcherPollResult:
     """
     Poll for new series in libraries and process only the new ones.
@@ -585,6 +637,7 @@ def watch_for_new_series(
         known_series: Dict of lib_id -> set(series_ids)
         metadata_provider: Pre-initialized metadata provider
         translator: Pre-initialized translator (can be None)
+        enqueue_series: When provided, queue IDs instead of processing inline.
     """
     result = WatcherPollResult()
     komga_logger = logging.getLogger('modules.komga_client')
@@ -603,11 +656,14 @@ def watch_for_new_series(
         new_series = [s for s in current_series if s.id not in known_series[lib_id]]
         if new_series:
             result.found += len(new_series)
-            logging.info("|                                                                                                    |")
-            logging.info("|====================================================================================================|")
-            log_frame("Watcher", 'center')
-            logging.info("|====================================================================================================|")
             logger.info(f"Watcher: Found {len(new_series)} new series in library '{lib_name}'")
+            if enqueue_series:
+                library_config = config_for_library(config, lib_id)
+                eligible = [s for s in new_series if s.name not in library_config.processing.exclude_series]
+                if eligible:
+                    enqueue_series([s.id for s in eligible])
+                known_series[lib_id].update(s.id for s in new_series)
+                continue
             for series in new_series:
                 if series.name in config.processing.exclude_series:
                     logger.info(f"Watcher: Skipping excluded series '{series.name}'")
@@ -625,7 +681,7 @@ def watch_for_new_series(
         else:
             logger.debug(f"Watcher: No new series in library '{lib_name}'")
 
-    if result.found:
+    if result.found and not enqueue_series:
         # Save caches after processing
         metadata_provider.save_cache()
         if translator and hasattr(translator, 'save_cache_to_disk'):
@@ -656,6 +712,7 @@ def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: 
 
     logger.info(f"Processing authors removal for '{series_name}' ({len(books)} books)")
     logger.debug(f"_remove_authors for '{series_name}': remove_writers={remove_writers}, remove_pencillers={remove_pencillers}")
+    failed_books = []
     books_to_process = 0
     roles_found = set()
     books_with_writers_removed = 0
@@ -700,12 +757,16 @@ def _remove_authors(books: List[KomgaBook], config: AppConfig, dry_run_changes: 
                         if success:
                             logger.debug(f"Successfully updated authors for book '{book.name}': removed writers/pencillers")
                         else:
-                            logger.error(f"Failed to update authors for book '{book.name}'")
+                            raise RuntimeError(f"Komga rejected author updates for book '{book.name}'.")
                 else:
                     logger.debug(f"Book '{book.name}' no authors to filter")
         except Exception as e:
             logger.error(f"Error processing book '{book.name}' in series '{series_name}': {e} - skipping")
+            failed_books.append(book.name)
             continue
+
+    if failed_books:
+        raise RuntimeError(f"Could not remove authors from {len(failed_books)} book(s) in series '{series_name}'.")
 
     logger.info(f"Author roles found in '{series_name}': {sorted([r for r in roles_found if r])}")
     if books_with_writers_removed > 0 or books_with_pencillers_removed > 0:
@@ -834,7 +895,7 @@ def _update_authors(books: List[KomgaBook], best_match: MetadataRecord, config: 
                         logger.debug(f"Successfully updated authors for book '{book.name}': {[a['name'] for a in komga_authors]}")
                         logger.info(f"Updated authors for book '{book.name}': {[a['name'] for a in komga_authors]}")
                     else:
-                        logger.error(f"Failed to update authors for book '{book.name}'")
+                        raise RuntimeError(f"Komga rejected author updates for book '{book.name}'.")
             else:
                 logger.debug(f"_update_authors: No author changes needed for book '{book.name}'")
         else:
@@ -1012,20 +1073,36 @@ def process_single_series(
     komga_client: KomgaClient,
     provider: MetadataProvider | ProviderChain,
     translator: Optional[Translator],
+    book_ids: Optional[list[str]] = None,
 ) -> Optional[List[str]]:
     """
     Processes a single Komga series.
     In dry run mode, it returns a list of proposed changes.
     In normal mode, it applies changes and returns None.
     """
-    logging.info("|                                                                                                    |")
-    logging.info("|====================================================================================================|")
-    log_frame(f"Processing Series: {series.name}", 'center')
-    logging.info("|====================================================================================================|")
+    logger.info("Processing series: %s", series.name)
     payload = {}
     change_descriptions: List[str] = []
 
     books = []
+
+    if config.processing.book_titles.mode != "off":
+        books = komga_client.get_books_in_series(series.id, series.name)
+        for book in books:
+            if book.series_id != series.id or (book_ids is not None and book.id not in book_ids):
+                continue
+            title = book_title(book, series, config.processing.book_titles)
+            if title is None:
+                logger.info("Skipping title for book %s: required naming data is missing.", book.id)
+                continue
+            if title == book.metadata.title:
+                continue
+            if book.metadata.title_lock and not config.processing.force_unlock:
+                logger.info("Skipping locked title for book %s.", book.id)
+                continue
+            change_descriptions.append(f"- Book title ({book.id}): {book.metadata.title!r} → {title!r}")
+            if not config.system.dry_run and not komga_client.update_book_metadata(book.id, {"title": title}):
+                raise RuntimeError(f"Could not save title for book '{book.id}'.")
 
     # 1. Handle removals first (don't need best_match)
     for handler in FIELD_HANDLERS:
@@ -1044,6 +1121,8 @@ def process_single_series(
     remove_authors = config.processing.remove_fields.authors.writers or config.processing.remove_fields.authors.pencillers
     if remove_authors:
         books = komga_client.get_books_in_series(series.id, series.name)
+        if book_ids is not None:
+            books = [book for book in books if book.id in book_ids]
         logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author removal")
         summary = _remove_authors(books, config, change_descriptions, komga_client, series.name)
         if summary:
@@ -1077,6 +1156,8 @@ def process_single_series(
             update_authors_enabled = (config.processing.update_fields.authors.writers or config.processing.update_fields.authors.pencillers)
             if not books and update_authors_enabled:
                 books = komga_client.get_books_in_series(series.id, series.name)
+                if book_ids is not None:
+                    books = [book for book in books if book.id in book_ids]
                 logger.debug(f"Retrieved {len(books)} books for series '{series.name}' for author updates")
 
             # 3. Handle updates
@@ -1123,10 +1204,10 @@ def process_single_series(
         return change_descriptions
     else:
         if payload:
-            logger.info(f"Updating metadata for '{series.name}' on Komga...")
+            logger.info("Saving metadata for '%s' to %s...", series.name, "KMM" if getattr(komga_client, "metadata_destination", None) == "KMM" else "Komga")
             success = komga_client.update_series_metadata(series.id, payload)
             if success:
                 logger.info(f"Successfully updated metadata for '{series.name}'.")
             else:
-                logger.error(f"Failed to update metadata for '{series.name}'.")
+                raise RuntimeError(f"Komga rejected metadata updates for series '{series.name}'.")
         return None

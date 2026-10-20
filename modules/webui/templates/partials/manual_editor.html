@@ -1,0 +1,90 @@
+{% from 'macros/ui.html' import icon, checkbox with context %}
+<dialog id="overwrite-dialog" class="metadata-editor drawer" aria-labelledby="overwrite-title"
+        data-library-id="{{ library.id }}" data-editor-messages='{{ manual_messages | tojson }}'>
+  <header class="drawer-head">
+    <div class="drawer-title">
+      <p class="eyebrow" id="manual-kind">{{ t('manual.open') }}</p>
+      <h2 id="overwrite-title"><span id="manual-item-title"></span></h2>
+    </div>
+    <div class="drawer-nav">
+      <button type="button" class="button button-icon button-quiet" data-editor-step="-1" aria-label="{{ t('manual.previous') }}" title="{{ t('manual.previous') }}">{{ icon('chevron-left') }}</button>
+      <button type="button" class="button button-icon button-quiet" data-editor-step="1" aria-label="{{ t('manual.next') }}" title="{{ t('manual.next') }}">{{ icon('chevron-right') }}</button>
+      <button type="button" class="button button-icon button-quiet" data-close-editor aria-label="{{ t('libraries.close') }}" title="{{ t('libraries.close') }}">{{ icon('close') }}</button>
+    </div>
+  </header>
+  <div class="drawer-body">
+    <p id="manual-loading" role="status">{{ t('manual.loading') }}</p>
+    <div id="manual-feedback" role="alert" class="alert" hidden></div>
+    <button type="button" id="manual-reload" class="button button-secondary" hidden>{{ t('manual.reload_button') }}</button>
+    <form id="manual-editor-form" hidden>
+      <p class="help section-description" id="manual-scope"></p>
+      <div class="editor-grid">
+        <section class="editor-cover">
+          <img id="manual-cover-preview" alt="{{ t('manual.cover_preview') }}" width="160" height="225">
+          <div class="field"><label for="manual-cover">{{ t('manual.custom_cover') }}</label><input type="file" id="manual-cover" name="cover" accept="image/jpeg,image/png,image/webp" aria-describedby="manual-cover-help"><p class="help" id="manual-cover-help">{{ t('manual.cover_help') }}</p></div>
+          <button type="button" id="manual-clear-cover" class="button button-secondary button-small" hidden>{{ t('manual.discard_cover') }}</button>
+          <div id="manual-cover-books-section" hidden>
+            {{ checkbox('manual-cover-all-books', t('manual.cover_all_books'), false, t('manual.cover_all_books_help')) }}
+            <p class="help" id="manual-cover-books-count" role="status"></p>
+          </div>
+        </section>
+        <section class="editor-fields" aria-label="{{ t('manual.fields_label') }}">
+          {% for key, label in [('title', 'manual.title'), ('summary', 'field.summary'), ('publisher', 'field.publisher'), ('genres', 'field.genres'), ('tags', 'manual.tags')] %}
+          <div class="field" data-editor-field="{{ key }}">
+            <div class="editor-field-label"><label for="manual-{{ key }}">{{ t(label) }}</label> <span data-lock-for="{{ key }}" class="badge badge-neutral" hidden>{{ icon('lock') }}{{ t('manual.locked') }}</span></div>
+            {% if key in ['summary', 'genres', 'tags'] %}<textarea id="manual-{{ key }}" name="{{ key }}" rows="{{ 6 if key == 'summary' else 3 }}" {% if key != 'summary' %}aria-describedby="manual-{{ key }}-help"{% endif %}></textarea>
+            {% else %}<input id="manual-{{ key }}" name="{{ key }}" type="text" {% if key == 'title' %}required{% endif %}>{% endif %}
+            {% if key in ['genres', 'tags'] %}<p class="help" id="manual-{{ key }}-help">{{ t('manual.one_per_line') }}</p>{% endif %}
+          </div>
+          {% endfor %}
+          <div class="field" data-editor-field="status">
+            <div class="editor-field-label"><label for="manual-status">{{ t('field.status') }}</label> <span data-lock-for="status" class="badge badge-neutral" hidden>{{ icon('lock') }}{{ t('manual.locked') }}</span></div>
+            <select name="status" id="manual-status">{% for state in ['ONGOING', 'ENDED', 'ABANDONED', 'HIATUS'] %}<option value="{{ state }}">{{ t('manual.status.' ~ state) }}</option>{% endfor %}</select>
+          </div>
+          <section data-editor-field="links" class="editor-links">
+            <div class="section-heading"><h3>{{ t('field.link') }}</h3><button type="button" id="manual-add-link" class="button button-secondary button-small">{{ t('manual.add_link') }}</button></div>
+            <div id="manual-links"></div>
+          </section>
+          <section class="editor-authors">
+            <h3>{{ t('manual.authors') }}</h3><p class="help" id="manual-author-scope"></p>
+            {% for role, label in [('writers', 'manual.writers'), ('pencillers', 'manual.pencillers')] %}
+            <div class="field">
+              <label class="check-row"><input type="checkbox" name="change_{{ role }}" id="manual-change-{{ role }}"><span>{{ t('manual.replace_authors', role=t(label)) }}</span></label>
+              <label class="sr-only" for="manual-{{ role }}">{{ t(label) }}</label>
+              <textarea id="manual-{{ role }}" name="{{ role }}" rows="3" disabled aria-describedby="manual-{{ role }}-help"></textarea>
+              <p class="help" id="manual-{{ role }}-help">{{ t('manual.one_per_line') }} <span data-mixed-for="{{ role }}" hidden>{{ t('manual.mixed_authors') }}</span></p>
+            </div>
+            {% endfor %}
+          </section>
+          <details class="disclosure" data-editor-field="language">
+            <summary>{{ t('ui.advanced') }}</summary>
+            <div class="field"><div class="editor-field-label"><label for="manual-language">{{ t('field.language') }}</label> <span data-lock-for="language" class="badge badge-neutral" hidden>{{ t('manual.locked') }}</span></div><input type="text" name="language" id="manual-language" list="manual-languages"><datalist id="manual-languages">{% for code in ['en','fr','ja','ko','zh','es','de','it','pt','nl'] %}<option value="{{ code }}">{% endfor %}</datalist></div>
+            <div class="field" data-editor-field="reading_direction"><div class="editor-field-label"><label for="manual-reading_direction">{{ t('field.reading_direction') }}</label> <span data-lock-for="reading_direction" class="badge badge-neutral" hidden>{{ t('manual.locked') }}</span></div><select name="reading_direction" id="manual-reading_direction"><option value="">{{ t('manual.unspecified') }}</option>{% for direction in ['LEFT_TO_RIGHT','RIGHT_TO_LEFT','VERTICAL','WEBTOON'] %}<option value="{{ direction }}">{{ t('manual.direction.' ~ direction) }}</option>{% endfor %}</select></div>
+          </details>
+          {{ checkbox('manual-lock-fields', t('manual.lock_fields'), true, t('manual.lock_help')) }}
+        </section>
+      </div>
+      <div class="drawer-actions">
+        <p class="help" id="manual-save-help">{{ t('manual.save_help') }}</p>
+        <button type="submit" class="button button-primary" id="manual-apply">{{ icon('check') }}{{ t('manual.apply') }}</button>
+      </div>
+    </form>
+    <section class="drawer-section" id="manual-provider-disclosure" hidden aria-labelledby="sources-action-title">
+      <h3 id="sources-action-title">{{ t('manual.refresh_sources') }}</h3>
+      <p class="help" id="manual-provider-scope"></p>
+      <form method="post" action="/libraries/{{ library.id }}/fetch" id="source-refresh-form" class="inline-form">
+        <input type="hidden" name="series_id" id="overwrite-series-id"><input type="hidden" name="book_id" id="overwrite-book-id">
+        {{ checkbox('replace_edits', t('manual.replace_edits'), false, t('manual.replace_edits_help')) }}
+        <button type="submit" class="button button-secondary">{{ icon('fetch') }}{{ t('manual.fetch_again') }}</button>
+      </form>
+    </section>
+    <section class="drawer-section" id="manual-skip-section" hidden>
+      <label class="switch-row" for="manual-skip">
+        <input type="checkbox" role="switch" id="manual-skip" aria-describedby="manual-skip-help">
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-text"><span class="check-title">{{ t('manual.skip') }}</span><span class="help" id="manual-skip-help">{{ t('manual.skip_help') }}</span></span>
+      </label>
+      <p class="help" id="manual-skip-status" role="status"></p>
+    </section>
+  </div>
+</dialog>

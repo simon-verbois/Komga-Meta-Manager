@@ -63,7 +63,7 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
 
         logger.warning("Failed login attempt for username '%s'.", username)
         return templates.TemplateResponse(
-            request=request, name="login.html", context={"error": "login.error"}
+            request=request, name="login.html", context={"error": "login.error", "username": username}
         )
 
     @router.post("/logout")

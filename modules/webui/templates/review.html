@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% from 'macros/ui.html' import icon, alert with context %}
+{% block title %}{{ t("nav.review") }} — Komga Meta Manager{% endblock %}
+{% block heading %}{{ t("nav.review") }}{% endblock %}
+{% block head %}<script src="/static/review-order.js" defer></script>{% endblock %}
+{% macro value(field, v, known=true) -%}
+  {% if not known %}<span class="muted">{{ t('review.unknown') }}</span>
+  {% elif field == 'cover' %}{{ t('review.cover.' ~ v) }}
+  {% elif v is none or v == '' or v == [] %}<span class="muted">{{ t('review.empty') }}</span>
+  {% elif field == 'status' %}{{ t('manual.status.' ~ v) }}
+  {% elif field == 'readingDirection' %}{{ t('manual.direction.' ~ v) }}
+  {% elif v is string %}
+    {% if field == 'summary' and v | length > 300 %}
+      <details class="review-long-text"><summary><span class="review-text-excerpt">{{ v[:250] }}…</span><span class="text-link review-text-more">{{ t('review.read_more') }}</span><span class="text-link review-text-less">{{ t('review.read_less') }}</span></summary><span class="value-text">{{ v }}</span></details>
+    {% else %}<span class="value-text">{{ v }}</span>{% endif %}
+  {% elif v is mapping %}{{ v | tojson }}
+  {% elif v is iterable %}
+    <ul class="value-list">{% for item in v %}<li>{% if item is mapping %}{{ item.label or item.name }}{% if item.role %} <span class="muted">({{ item.role }})</span>{% endif %}{% else %}{{ item }}{% endif %}</li>{% endfor %}</ul>
+  {% else %}{{ v }}{% endif %}
+{%- endmacro %}
+{% macro changes_table(group, item) -%}
+            <div class="table-scroll">
+              <table class="data-table review-table">
+                <thead><tr>
+                  <th scope="col">{{ t('review.col.field') }}</th>
+                  <th scope="col">{{ t('review.col.before') }}</th>
+                  <th scope="col">{{ t('review.col.after') }}</th>
+                  <th scope="col"><span class="sr-only">{{ t('home.col.actions') }}</span></th>
+                </tr></thead>
+                <tbody>
+                  {% for c in item.changes %}
+                    <tr>
+                      <th scope="row">
+                        {{ t('review.field.' ~ c.field) if t('review.field.' ~ c.field) != 'review.field.' ~ c.field else c.field }}
+                        <span class="row-meta">{% if c.manual %}{{ t('review.origin.manual') }}{% elif c.field == 'title' %}{{ t('review.origin.naming') }}{% else %}{{ t('review.origin.sources') }}{% endif %}{% if c.lock %} · {{ icon('lock') }}{{ t('review.locks') }}{% endif %}</span>
+                      </th>
+                      {% if c.lock_only %}
+                        <td colspan="2">{{ t('review.lock_only') }}</td>
+                      {% else %}
+                        {% if c.field == 'cover' %}
+                          {% set thumb = '/libraries/' ~ (group.library_id | urlencode) ~ '/' ~ item.entity ~ '/' ~ (item.id | urlencode) ~ '/thumbnail' %}
+                          <td class="before" data-label="{{ t('review.col.before') }}"><img class="cover-compare" src="{{ thumb }}?komga=1" alt="{{ t('review.cover.current') }}" width="72" height="101" loading="lazy"></td>
+                          <td class="after" data-label="{{ t('review.col.after') }}">{% if c.after == 'remove' %}{{ t('review.cover.remove') }}{% else %}<img class="cover-compare" src="{{ thumb }}" alt="{{ t('review.cover.upload') }}" width="72" height="101" loading="lazy">{% endif %}</td>
+                        {% else %}
+                          <td class="before" data-label="{{ t('review.col.before') }}">{{ value(c.field, c.before, c.before_known) }}</td>
+                          <td class="after" data-label="{{ t('review.col.after') }}">{{ value(c.field, c.after) }}</td>
+                        {% endif %}
+                      {% endif %}
+                      <td class="row-actions">
+                        <form method="post" action="/review/discard">
+                          <input type="hidden" name="series_id" value="{{ group.series_id }}">
+                          <input type="hidden" name="entity" value="{{ item.entity }}">
+                          <input type="hidden" name="item_id" value="{{ item.id }}">
+                          <input type="hidden" name="field" value="{{ c.field }}">
+                          <input type="hidden" name="title" value="{{ group.title }}">
+                          {% if library %}<input type="hidden" name="library" value="{{ library }}">{% endif %}
+                          <button type="submit" class="button button-icon button-quiet" aria-label="{{ t('review.discard_field', field=c.field, title=item.title) }}" title="{{ t('review.discard') }}">{{ icon('close') }}</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+{%- endmacro %}
+{% block content %}
+  {% if queued %}{{ alert('success', t('review.queued', id=queued)) }}{% endif %}
+  {% if message %}{{ alert('error', t(message)) }}{% endif %}
+  {% if discarded %}{{ alert('success', plural(discarded | int, 'review.discarded_one', 'review.discarded_many')) }}{% endif %}
+  {% if numbering_saved %}{{ alert('success', t('numbering.saved')) }}{% endif %}
+
+  {% if filters | length > 1 or library %}
+    <nav class="pill-nav" aria-label="{{ t('review.filter') }}">
+      <a class="pill{% if not library %} selected{% endif %}" href="/review"{% if not library %} aria-current="page"{% endif %}>{{ t('review.all_libraries') }}</a>
+      {% for f in filters %}
+        <a class="pill{% if library == f.id %} selected{% endif %}" href="/review?library={{ f.id | urlencode }}"{% if library == f.id %} aria-current="page"{% endif %}>{{ f.name }} <span class="pill-count">{{ f.count }}</span></a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% if groups %}
+    <section class="panel review-summary">
+      <div>
+        <h2 data-review-summary-count>{{ plural(change_count, 'review.summary_changes_one', 'review.summary_changes_many') }} · {{ plural(groups | length, 'job.series_one', 'job.series_many') }}</h2>
+        <p class="muted">{{ t('review.summary_help') }}</p>
+      </div>
+      <form method="post" action="/review/publish" id="publish-form" class="button-row"
+            data-confirm="{{ t('review.confirm_all') }}" data-confirm-selected="{{ t('review.confirm_selected') }}">
+        {% if library %}<input type="hidden" name="library" value="{{ library }}">{% endif %}
+        <button type="submit" class="button button-primary" data-publish-button
+                data-label-all="{{ t('review.publish_all') }}" data-label-selected="{{ t('review.publish_selected') }}">{{ icon('upload') }}<span>{{ t('review.publish_all') }}</span></button>
+      </form>
+    </section>
+
+    <div class="review-toolbar" aria-label="{{ t('review.display') }}">
+      <button type="button" class="button button-secondary button-small" data-review-expand="true">{{ t('review.expand') }}</button>
+      <button type="button" class="button button-secondary button-small" data-review-expand="false">{{ t('review.collapse') }}</button>
+    </div>
+    <div class="review-list">
+      {% for group in groups %}
+        <article class="panel review-group" data-series-id="{{ group.series_id }}" aria-labelledby="group-{{ group.series_id }}">
+          <header class="review-group-head">
+            <label class="check-row review-select" for="select-{{ group.series_id }}">
+              <input type="checkbox" id="select-{{ group.series_id }}" name="series_id" value="{{ group.series_id }}" form="publish-form" data-review-select>
+              <span class="sr-only">{{ t('review.select', title=group.title) }}</span>
+            </label>
+            <img class="review-thumb" src="/libraries/{{ group.library_id | urlencode }}/series/{{ group.series_id | urlencode }}/thumbnail" alt="" width="48" height="68" loading="lazy">
+            <div class="review-group-title">
+              <h2 id="group-{{ group.series_id }}">{{ group.title }}</h2>
+              <span class="row-meta">{{ group.library }}</span>
+              {% if group.warnings %}<span class="badge badge-warning">{{ icon('warning') }}{{ t('review.warnings.label') }}</span>{% endif %}
+            </div>
+            <a class="button button-secondary button-small" href="/review/numbering/{{ group.series_id | urlencode }}{% if library %}?library={{ library | urlencode }}{% endif %}">{{ t('numbering.title') }}</a>
+            <form method="post" action="/review/discard" data-confirm="{{ t('review.confirm_discard', title=group.title) }}">
+              <input type="hidden" name="series_id" value="{{ group.series_id }}">
+              <input type="hidden" name="title" value="{{ group.title }}">
+              {% if library %}<input type="hidden" name="library" value="{{ library }}">{% endif %}
+              <button type="submit" class="button button-secondary button-small">{{ icon('close') }}{{ t('review.discard_all') }}</button>
+            </form>
+          </header>
+          {% if group.warnings %}
+            <details class="review-warnings">
+              <summary>{{ icon('warning') }}{{ t('review.warnings.inspect') }}</summary>
+              <p>{{ t('review.warnings.help') }}</p>
+              <ul>
+                {% for warning in group.warnings %}
+                  <li><strong>{{ t('review.warnings.' ~ warning.code, number=warning.number | default('')) }}</strong>
+                    <ul>{% for book in warning.books %}<li>{{ t('review.warnings.book', title=book.title, number=book.number) }}</li>{% endfor %}</ul>
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
+          <details class="review-series-details"{% if groups | length == 1 %} open{% endif %}>
+            <summary class="review-disclosure">{{ icon('chevron-down') }}{{ t('review.inspect') }}<span class="row-meta">{{ plural(group.change_count, 'review.summary_changes_one', 'review.summary_changes_many') }}{% if group.books %} · {{ plural(group.books | length, 'review.books_one', 'review.books_many') }}{% endif %}</span></summary>
+            {% if group.series_items %}
+              <h3 class="review-section-title">{{ t('review.series_metadata') }}</h3>
+              {% for item in group.series_items %}{{ changes_table(group, item) }}{% endfor %}
+            {% endif %}
+            {% if group.books %}
+              <h3 class="review-section-title">{{ t('review.book_changes') }} <span class="badge badge-neutral">{{ group.books | length }}</span></h3>
+              <p class="sr-only" id="order-help-{{ group.series_id }}">{{ t('numbering.drag_help') }}</p>
+              <p class="review-order-status help" role="status" aria-live="polite" data-order-status></p>
+              <div class="review-books" data-review-order data-version="{{ group.order_version }}" data-reorder-url="/review/reorder/{{ group.series_id | urlencode }}{% if library %}?library={{ library | urlencode }}{% endif %}"
+                   data-saving="{{ t('numbering.order_saving') }}" data-saved="{{ t('numbering.order_saved') }}" data-failed="{{ t('numbering.order_failed') }}">
+                {% for item in group.books %}
+                  <div class="review-book-row" id="review-book-{{ item.id }}" data-order-book-id="{{ item.id }}">
+                  <button type="button" class="button button-icon button-quiet review-order-handle" data-order-handle aria-label="{{ t('numbering.drag_for', title=item.current_title or item.title) }}" aria-describedby="order-help-{{ group.series_id }}" aria-expanded="false" title="{{ t('numbering.drag_help') }}"{% if not group.order_version or group.books | length < 2 %} disabled{% endif %}>{{ icon('menu') }}</button>
+                  <div class="review-order-menu" data-order-menu hidden role="group" aria-label="{{ t('numbering.order_for', title=item.current_title or item.title) }}">
+                    <button type="button" class="button button-secondary button-small" data-order-step="-1"{% if loop.first %} disabled{% endif %}>{{ t('numbering.up') }}</button>
+                    <button type="button" class="button button-secondary button-small" data-order-step="1"{% if loop.last %} disabled{% endif %}>{{ t('numbering.down') }}</button>
+                  </div>
+                  <details class="review-book" data-book-id="{{ item.id }}">
+                    <summary>
+                      {{ icon('chevron-down') }}
+                      <span class="review-book-overview">
+                        <span class="review-book-heading">
+                        {% if item.number is not none and item.number | string | trim %}<span class="row-meta">{{ t('review.book_number', number=item.number) }}</span>{% endif %}
+                        <span class="review-book-title">{{ item.current_title if item.current_title is not none else t('review.unknown') }}{% if item.current_title != item.title %}<span aria-hidden="true"> → </span><span class="sr-only">{{ t('review.col.after') }}:</span><span class="review-new-title">{{ item.title }}</span>{% endif %}</span>
+                        </span>
+                        <span class="row-meta">{% for change in item.changes %}{{ t('review.field.' ~ change.field) if t('review.field.' ~ change.field) != 'review.field.' ~ change.field else change.field }}{{ ' · ' if not loop.last }}{% endfor %}</span>
+                      </span>
+                      <span class="badge badge-neutral">{{ plural(item.changes | length, 'review.summary_changes_one', 'review.summary_changes_many') }}</span>
+                    </summary>
+                    {{ changes_table(group, item) }}
+                  </details>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </details>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="panel empty-state">
+      {{ icon('check') }}
+      <h2>{{ t('review.empty_title') }}</h2>
+      <p class="help">{{ t('review.empty_help') }}</p>
+      <a class="button button-secondary" href="/">{{ t('review.back_home') }}</a>
+    </section>
+  {% endif %}
+  {% if queue.active %}{% include "partials/activity_strip.html" %}{% endif %}
+{% endblock %}

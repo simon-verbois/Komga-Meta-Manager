@@ -1,0 +1,28 @@
+{% from 'macros/ui.html' import icon, job_title, job_status, job_counts with context %}
+<div{% if active %} hx-get="/logs/jobs/list?page={{ page }}" hx-trigger="every 3s" hx-swap="outerHTML" hx-target="this"{% endif %}>
+{% if jobs %}
+  <ol class="job-rows">
+    {% for job in jobs %}
+      <li class="job-row">
+        <div class="job-row-main">
+          <a class="row-title" href="/logs/jobs/{{ job.id }}">{{ job_title(job) }}</a>
+          <span class="row-meta">#{{ job.id }} · {{ job.libraries | join(', ') }}{% if job.series_count %} · {{ plural(job.series_count, 'job.series_one', 'job.series_many') }}{% endif %} · {{ t('queue.source.' ~ job.source) }} · <time datetime="{{ job.created_at }}" data-local-time>{{ job.created_at[:16] | replace('T', ' ') }}</time></span>
+        </div>
+        <div class="job-row-status">
+          {{ job_status(job) }}
+          {% if job.status not in ['queued'] %}<span class="help">{{ job_counts(job) }}</span>{% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+  {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="{{ t('ui.pagination') }}">
+      {% if page > 1 %}<button type="button" class="button button-secondary button-small" hx-get="/logs/jobs/list?page={{ page - 1 }}" hx-target="#job-list">{{ t('jobs.previous') }}</button>{% endif %}
+      <span class="help">{{ t('jobs.page', page=page, total=total_pages) }}</span>
+      {% if page < total_pages %}<button type="button" class="button button-secondary button-small" hx-get="/logs/jobs/list?page={{ page + 1 }}" hx-target="#job-list">{{ t('jobs.next') }}</button>{% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <div class="empty-state compact">{{ icon('play') }}<p class="help">{{ t('activity.none') }}</p></div>
+{% endif %}
+</div>

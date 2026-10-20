@@ -25,6 +25,7 @@ config.yml
 /config/webui.db
 /config/webui.db-wal
 /config/webui.db-shm
+/config/webui.db.metadata.lock
 k8s-manifest/04-secret.yaml
 
 # Cache directories

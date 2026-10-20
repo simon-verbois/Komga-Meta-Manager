@@ -7,7 +7,7 @@ from modules.processor import ProcessingResult
 def test_job_saves_translation_cache(app_config) -> None:
     translator = Mock()
     result = ProcessingResult(translator=translator)
-    with patch("modules.main.process_libraries", return_value=result):
+    with patch("modules.main.run_workflow", return_value=result):
         assert run_job_and_save_cache(app_config) is result
     translator.save_cache_to_disk.assert_called_once()
 
@@ -105,3 +105,46 @@ def test_main_hot_reload_starts_scheduler_without_automatic_job(tmp_path, app_co
         assert main() == 0
     scheduler.assert_called_once_with(updated)
     job.assert_not_called()
+
+def test_scheduler_queues_jobs_instead_of_processing_inline(app_config):
+    from modules.main import initialize_scheduler
+
+    app_config.system.scheduler.enabled = True
+    with patch("modules.main.get_job_queue") as get_queue, patch("modules.main.run_workflow") as process:
+        scheduler = initialize_scheduler(app_config)
+        scheduler.run_job()
+    get_queue.return_value.enqueue.assert_called_once()
+    snapshot = get_queue.return_value.enqueue.call_args.args[0]
+    assert get_queue.return_value.enqueue.call_args.kwargs == {"source": "scheduler"}
+    # Automatic runs only fetch into KMM unless automatic publishing was allowed.
+    assert snapshot.system.workflow == "collect"
+    assert snapshot.system.dry_run is False
+    assert snapshot.system.overwrite_local is False
+    assert app_config.system.dry_run is True
+    process.assert_not_called()
+
+
+def test_scheduler_publishes_only_when_auto_publish_is_enabled(app_config):
+    from modules.main import initialize_scheduler
+
+    app_config.system.scheduler.enabled = True
+    app_config.system.auto_publish = True
+    with patch("modules.main.get_job_queue") as get_queue, patch("modules.main.run_workflow"):
+        initialize_scheduler(app_config).run_job()
+    snapshot = get_queue.return_value.enqueue.call_args.args[0]
+    assert snapshot.system.workflow == "both"
+    assert snapshot.system.dry_run is False
+
+
+def test_startup_logs_are_plain_and_diagnostics_use_debug(caplog):
+    import logging
+    from modules.main import display_header
+
+    with caplog.at_level(logging.DEBUG, logger="modules.main"):
+        display_header()
+    info = [record.getMessage() for record in caplog.records if record.levelno == logging.INFO]
+    assert len(info) == 2
+    assert info[0].startswith("Komga Meta Manager")
+    assert info[1] == "Web UI available at http://0.0.0.0:8765"
+    assert all(not record.getMessage().startswith(("|", "left:", "center:")) for record in caplog.records)
+    assert any(record.levelno == logging.DEBUG and "Platform:" in record.getMessage() for record in caplog.records)

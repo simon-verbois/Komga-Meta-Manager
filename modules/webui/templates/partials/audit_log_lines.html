@@ -1,42 +1,48 @@
+{% from 'macros/ui.html' import icon with context %}
 {% if entries %}
-<table class="w-full text-xs text-left">
-  <thead>
-    <tr class="text-gray-500 border-b border-gray-800">
-      <th class="pb-2 pr-4 font-medium">{{ t('logs.audit.time') }}</th>
-      <th class="pb-2 pr-4 font-medium">{{ t('logs.audit.action') }}</th>
-      <th class="pb-2 font-medium">{{ t('logs.audit.detail') }}</th>
-    </tr>
-  </thead>
-  <tbody class="divide-y divide-gray-900">
-    {% for e in entries %}
-    <tr class="hover:bg-gray-800/30">
-      <td class="py-2 pr-4 text-gray-500 whitespace-nowrap">{{ e.timestamp[:19] | replace('T', ' ') }}</td>
-      <td class="py-2 pr-4 text-indigo-400 font-mono whitespace-nowrap">{{ e.action }}</td>
-      <td class="py-2 text-gray-300">{{ e.detail or '—' }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-<!-- Pagination -->
-{% if total_pages > 1 %}
-<div class="flex items-center gap-2 mt-4 text-xs text-gray-400">
-  {% if page > 1 %}
-  <button hx-get="/logs/audit/lines?page={{ page - 1 }}"
-          hx-target="#audit-log-lines"
-          hx-swap="innerHTML"
-          class="px-2 py-1 border border-gray-700 rounded hover:bg-gray-800">{{ t('logs.audit.previous') }}</button>
+  <table class="audit-table">
+    <caption class="sr-only">{{ t("logs.audit.title") }}</caption>
+    <thead>
+      <tr>
+        <th scope="col">{{ t("logs.audit.time") }}</th>
+        <th scope="col">{{ t("logs.audit.action") }}</th>
+        <th scope="col">{{ t("logs.audit.detail") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+        <tr>
+          <td>
+            <time datetime="{{ e.timestamp }}" data-local-time>{{ e.timestamp[:19] | replace('T', ' ') }}</time>
+          </td>
+          {% set entry = e | audit_text %}
+          <td><span class="audit-action">{{ entry.label }}</span></td>
+          <td>{{ entry.detail }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="{{ t('ui.pagination') }}">
+      {% if page > 1 %}
+        <button hx-get="/logs/audit/lines?page={{ page - 1 }}"
+                hx-target="#audit-log-lines"
+                hx-swap="innerHTML"
+                class="button button-secondary button-small">{{ t("logs.audit.previous") }}</button>
+      {% endif %}
+      <span class="help">{{ t('logs.audit.page', page=page, total=total_pages) }}</span>
+      {% if page < total_pages %}
+        <button hx-get="/logs/audit/lines?page={{ page + 1 }}"
+                hx-target="#audit-log-lines"
+                hx-swap="innerHTML"
+                class="button button-secondary button-small">{{ t("logs.audit.next") }}</button>
+      {% endif %}
+    </nav>
   {% endif %}
-  <span>{{ t('logs.audit.page', page=page, total=total_pages) }}</span>
-  {% if page < total_pages %}
-  <button hx-get="/logs/audit/lines?page={{ page + 1 }}"
-          hx-target="#audit-log-lines"
-          hx-swap="innerHTML"
-          class="px-2 py-1 border border-gray-700 rounded hover:bg-gray-800">{{ t('logs.audit.next') }}</button>
-  {% endif %}
-</div>
-{% endif %}
-
 {% else %}
-<span class="text-gray-500 text-sm">{{ t('logs.audit.empty') }}</span>
+  <div class="empty-state">
+    {{ icon("logs") }}
+    <h3>{{ t("logs.audit.empty") }}</h3>
+    <p class="help">{{ t("ui.logs.audit.empty") }}</p>
+  </div>
 {% endif %}

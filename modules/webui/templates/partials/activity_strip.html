@@ -1,0 +1,49 @@
+{% from 'macros/ui.html' import icon, job_title, job_status, job_counts with context %}
+{% set active = queue.active %}
+{% set last = (queue.jobs | rejectattr('status', 'in', ['queued', 'running', 'stopping']) | first) %}
+<section id="activity-strip"
+         class="panel activity-strip{% if active %} is-active{% endif %}"
+         hx-get="/status"
+         hx-trigger="every {{ '3s' if active else '10s' }} [!document.getElementById('activity-strip').contains(document.activeElement)]"
+         hx-swap="outerHTML"
+         hx-sync="this:drop"
+         aria-labelledby="activity-title">
+  <div class="section-heading">
+    <h2 id="activity-title">{{ t('activity.now') }}</h2>
+    <a class="text-link" href="/logs">{{ t('activity.all') }}{{ icon('arrow') }}</a>
+  </div>
+  {% if queue_message %}<div class="alert alert-error" role="alert">{{ t(queue_message) }}</div>{% endif %}
+  {% if active %}
+    <ol class="job-rows" aria-live="polite">
+      {% for job in active %}
+        <li class="job-row">
+          <div class="job-row-main">
+            <a class="row-title" href="/logs/jobs/{{ job.id }}">{{ job_title(job) }}</a>
+            <span class="row-meta">{{ job.libraries | join(', ') }}{% if job.series_count %} · {{ plural(job.series_count, 'job.series_one', 'job.series_many') }}{% endif %}</span>
+          </div>
+          <div class="job-row-status">
+            {{ job_status(job) }}
+            {% if job.status != 'queued' %}<span class="help">{{ job_counts(job) }}</span>{% elif job.position %}<span class="help">{{ t('queue.position', n=job.position) }}</span>{% endif %}
+          </div>
+          <div class="job-row-actions">
+            {% if job.status in ['queued', 'running'] %}
+              <form hx-post="/jobs/{{ job.id }}/cancel" hx-target="#activity-strip" hx-swap="outerHTML" hx-disabled-elt="find button">
+                <button type="submit" class="button button-secondary button-small" aria-label="{{ t('queue.cancel_label', id=job.id) if job.status == 'queued' else t('queue.stop_label', id=job.id) }}">{{ t('queue.cancel') if job.status == 'queued' else t('queue.stop') }}</button>
+              </form>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% elif last %}
+    <p class="last-job">
+      <span>{{ t('activity.last') }}</span>
+      <a class="row-title" href="/logs/jobs/{{ last.id }}">{{ job_title(last) }}</a>
+      <span class="muted">{{ last.libraries | join(', ') }}</span>
+      {{ job_status(last) }}
+      <span class="help">{{ job_counts(last) }}{% if last.finished_at %} · <time datetime="{{ last.finished_at }}" data-local-time>{{ last.finished_at[:16] | replace('T', ' ') }}</time>{% endif %}</span>
+    </p>
+  {% else %}
+    <p class="help">{{ t('activity.none') }}</p>
+  {% endif %}
+</section>

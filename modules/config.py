@@ -4,7 +4,8 @@ Handles loading and validation of the application's configuration file.
 """
 import logging
 import os
-from typing import List, Optional
+from string import Formatter
+from typing import List, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
@@ -37,10 +38,25 @@ class WatcherConfig(BaseModel):
 
 class SystemConfig(BaseModel):
     """Pydantic model for system settings."""
+    workflow: Literal["collect", "push", "both"] = "both"
+    overwrite_local: bool = False
     dry_run: bool = True
-    debug: bool = False
+    # Automatic runs always fetch into KMM; publishing to Komga without review is opt-in.
+    auto_publish: bool = False
+    debug: bool = False  # Legacy console verbosity; Activity collects application debug entries independently.
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     watcher: WatcherConfig = Field(default_factory=WatcherConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_auto_publish(cls, data):
+        """Keep live automatic publication for configurations saved before auto_publish existed."""
+        if isinstance(data, dict) and "auto_publish" not in data:
+            data = {
+                **data,
+                "auto_publish": data.get("workflow", "both") in ("both", "push") and data.get("dry_run", True) is False,
+            }
+        return data
 
 class KomgaConfig(BaseModel):
     """Pydantic model for Komga server configuration."""
@@ -55,6 +71,7 @@ class CacheConfig(BaseModel):
 
 class ProviderConfig(BaseModel):
     """Pydantic model for metadata provider settings."""
+    enabled: bool = True
     name: str = "anilist"
     priority: int = Field(default=1, ge=1)
     min_score: int = Field(default=80, ge=0, le=100)
@@ -126,6 +143,26 @@ class UpdateFlags(BaseModel):
     tags: TagsConfig = Field(default_factory=TagsConfig)
     link: bool = False
 
+class BookTitleConfig(BaseModel):
+    """Opt-in naming of displayed book titles; file names are never changed."""
+
+    mode: Literal["off", "volume", "chapter", "series", "custom"] = "off"
+    template: str = Field(default="{series} - Volume {number}", max_length=200)
+    padding: int = Field(default=0, ge=0, le=4)
+
+    @field_validator("template")
+    @classmethod
+    def validate_template(cls, value: str) -> str:
+        """Allow only stable series and number placeholders, without format expressions."""
+        value = value.strip()
+        if not value or any(ord(character) < 32 for character in value):
+            raise ValueError("Enter a non-empty, single-line book title template")
+        for _, field, spec, conversion in Formatter().parse(value):
+            if field is not None and (field not in {"series", "number"} or spec or conversion):
+                raise ValueError("Book titles support only {series} and {number}")
+        return value
+
+
 class ProcessingConfig(BaseModel):
     """Pydantic model for metadata processing logic."""
     overwrite_existing: bool = False
@@ -133,6 +170,7 @@ class ProcessingConfig(BaseModel):
     exclude_series: List[str] = Field(default_factory=list)
     update_fields: UpdateFlags = Field(default_factory=UpdateFlags)
     remove_fields: RemoveFlags = Field(default_factory=RemoveFlags)
+    book_titles: BookTitleConfig = Field(default_factory=BookTitleConfig)
 
     @model_validator(mode='after')
     def enforce_remove_priority(self):
@@ -196,10 +234,33 @@ class TranslationConfig(BaseModel):
         self.target_language = language
         return self
 
+class LibraryConfig(BaseModel):
+    """Library-specific overrides, keyed by the stable Komga library ID."""
+    name: str
+    content_type: Literal["manga", "webtoon", "ebook"] = "manga"
+    processing: Optional[ProcessingConfig] = None
+    providers: Optional[List[ProviderConfig]] = None
+    translation_enabled: Optional[bool] = None
+    target_language: Optional[str] = None
+    # Series skipped by this library, added to the effective processing exclusions.
+    exclude_series: List[str] = Field(default_factory=list)
+
+    @field_validator("providers")
+    @classmethod
+    def validate_sources(cls, value):
+        if value is not None:
+            names = [source.name for source in value]
+            priorities = [source.priority for source in value]
+            if len(names) != len(set(names)) or len(priorities) != len(set(priorities)):
+                raise ValueError("Sources must have unique names and priorities")
+        return value
+
+
 class AppConfig(BaseModel):
     """Root Pydantic model for the application configuration."""
     system: SystemConfig = Field(default_factory=SystemConfig)
     komga: KomgaConfig
+    library_settings: dict[str, LibraryConfig] = Field(default_factory=dict)
     providers: List[ProviderConfig] = Field(default_factory=default_providers)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     translation: Optional[TranslationConfig] = None
@@ -263,3 +324,30 @@ def load_config(path: str = CONFIG_PATH) -> AppConfig:
         translation['deepl']['api_key'] = deepl_api_key
 
     return AppConfig(**config_data)
+
+
+def config_for_library(config: AppConfig, library_id: str) -> AppConfig:
+    """Resolve saved overrides without mutating the shared settings snapshot."""
+    resolved = config.model_copy(deep=True)
+    profile = resolved.library_settings.get(library_id)
+    resolved.library_settings = {}
+    if profile:
+        if profile.processing is not None:
+            resolved.processing = profile.processing.model_copy(deep=True)
+        resolved.processing.exclude_series = list(
+            dict.fromkeys([*resolved.processing.exclude_series, *profile.exclude_series])
+        )
+        if profile.providers is not None:
+            resolved.providers = list(profile.providers)
+            names = {source.name for source in resolved.providers}
+            next_priority = max((source.priority for source in resolved.providers), default=0) + 1
+            for name in SUPPORTED_METADATA_PROVIDERS:
+                if name not in names:
+                    resolved.providers.append(ProviderConfig(name=name, enabled=False, priority=next_priority))
+                    next_priority += 1
+        if profile.translation_enabled is not None:
+            resolved.translation = resolved.translation or TranslationConfig(enabled=False)
+            resolved.translation.enabled = profile.translation_enabled
+        if profile.target_language and resolved.translation:
+            resolved.translation.target_language = profile.target_language
+    return resolved

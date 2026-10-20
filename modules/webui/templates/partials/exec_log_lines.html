@@ -1,10 +1,14 @@
 {% if lines %}
   {% for entry in lines %}
-  <div class="leading-5 {% if entry.level == 'ERROR' or entry.level == 'CRITICAL' %}text-red-400
-              {% elif entry.level == 'WARNING' %}text-yellow-400
-              {% elif entry.level == 'DEBUG' %}text-gray-600
-              {% else %}text-gray-300{% endif %}">{{ entry.msg }}</div>
+    <div class="log-line log-{{ entry.level | lower }}">
+      <time class="log-time" datetime="{{ entry.ts | replace(' ', 'T') }}Z">{{ entry.ts }} UTC</time>
+      <span class="log-level">{{ entry.level }}</span>
+      <span class="log-message">{{ entry.msg }}</span>
+    </div>
   {% endfor %}
 {% else %}
-<span class="text-gray-600">{{ t('logs.exec.empty') }}</span>
+  <div class="log-empty">
+    {{ t("logs.exec.no_matches") if has_logs else t("logs.exec.empty") }}
+    <p>{{ t("logs.exec.no_matches_help") if has_logs else t("ui.logs.exec.empty") }}</p>
+  </div>
 {% endif %}

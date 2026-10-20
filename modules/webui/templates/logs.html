@@ -1,108 +1,57 @@
 {% extends "base.html" %}
-{% block title %}{{ t('logs.title') }} — KMM{% endblock %}
-
+{% from 'macros/ui.html' import icon with context %}
+{% block title %}{{ t("nav.activity") }} — Komga Meta Manager{% endblock %}
+{% block heading %}{{ t("nav.activity") }}{% endblock %}
 {% block content %}
-<div class="space-y-6 h-full flex flex-col">
-  <h1 class="text-xl font-bold">{{ t('logs.title') }}</h1>
-
-  <!-- Tab bar -->
-  <div class="flex gap-1 border-b border-gray-800" x-data="{ tab: 'exec' }">
-    <!-- We use simple JS for tab switching (no alpine needed) -->
-  </div>
-
-  <!-- Tab controls -->
-  <div class="flex gap-2 text-sm" id="log-tabs">
-    <button onclick="showTab('exec')" id="tab-exec"
-            class="px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium">
-      {{ t('logs.exec.title') }}
-    </button>
-    <button onclick="showTab('audit')" id="tab-audit"
-            class="px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white">
-      {{ t('logs.audit.title') }}
-    </button>
-  </div>
-
-  <!-- Execution log panel -->
-  <div id="panel-exec" class="flex-1 flex flex-col bg-gray-900 border border-gray-800 rounded-xl p-4">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-3">
-        <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none">
-          <input type="checkbox" id="debug-toggle" name="debug" value="true"
-                 class="rounded bg-gray-800 border-gray-600 text-indigo-500"
-                 onchange="refreshExecLog()" />
-          {{ t('logs.exec.debug') }}
-        </label>
+  <nav class="log-tabs" aria-label="{{ t('ui.log.navigation') }}">
+    {% for key, glyph in [('jobs', 'play'), ('history', 'shield'), ('technical', 'logs')] %}
+      <a href="/logs?tab={{ key }}" class="log-tab{% if tab == key %} selected{% endif %}"{% if tab == key %} aria-current="page"{% endif %}>{{ icon(glyph) }}{{ t('activity.tab.' ~ key) }}</a>
+    {% endfor %}
+  </nav>
+  {% if tab == 'jobs' %}
+    <section class="panel">
+      <p class="help section-description">{{ t('activity.jobs_help') }}</p>
+      <div id="job-list" hx-get="/logs/jobs/list" hx-trigger="load" hx-swap="innerHTML">
+        <p class="help" role="status">{{ t("ui.loading") }}</p>
       </div>
-      <div class="flex gap-2">
-        <button hx-post="/logs/exec/clear"
-                hx-target="#exec-log-lines"
-                hx-swap="innerHTML"
-                class="text-xs text-gray-400 hover:text-white border border-gray-700
-                       px-3 py-1.5 rounded-lg transition-colors">
-          {{ t('logs.exec.clear') }}
-        </button>
+    </section>
+  {% elif tab == 'history' %}
+    <section class="panel log-panel">
+      <p class="help section-description">{{ t("ui.logs.audit.help") }}</p>
+      <div class="table-scroll">
+        <div id="audit-log-lines" hx-get="/logs/audit/lines" hx-trigger="load" hx-swap="innerHTML">
+          <p class="help" role="status">{{ t("ui.loading") }}</p>
+        </div>
       </div>
-    </div>
-
-    <!-- Log lines (HTMX polling every 3s) -->
-    <div class="flex-1 overflow-y-auto log-scroll bg-gray-950 rounded-lg p-3 font-mono text-xs
-                min-h-0 max-h-[calc(100vh-22rem)]"
-         id="exec-log-container">
-      <div id="exec-log-lines"
-           hx-get="/logs/exec/lines"
-           hx-trigger="load, every 3s"
-           hx-swap="innerHTML"
-           hx-include="#debug-toggle">
-        <span class="text-gray-500">{{ t('logs.exec.empty') }}</span>
+    </section>
+  {% else %}
+    <section class="panel log-panel">
+      <p class="help section-description">{{ t("ui.logs.exec.help") }}</p>
+      <div class="log-options">
+        <fieldset id="log-level-filters" class="log-level-filters">
+          <legend>{{ t("logs.exec.levels") }}</legend>
+          <input type="hidden" name="filtered" value="true">
+          <div class="log-filter-options">
+            {% for level in log_levels %}
+              <label class="log-level-filter" data-level="{{ level }}">
+                <input type="checkbox" name="levels" value="{{ level }}" {% if level in default_log_levels %}checked{% endif %} data-refresh-log>
+                <span>{{ level }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <div class="log-controls">
+          <label class="check-row"><input type="checkbox" id="follow-log" checked>{{ t("ui.logs.follow") }}</label>
+          <button hx-post="/logs/exec/clear" hx-target="#exec-log-lines" hx-swap="innerHTML" hx-sync="#exec-log-lines:replace"
+                  hx-confirm="{{ t('ui.logs.clear.confirm') }}" class="button button-secondary button-small">{{ t("logs.exec.clear") }}</button>
+        </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Audit log panel (hidden by default) -->
-  <div id="panel-audit" class="hidden flex-1 flex-col bg-gray-900 border border-gray-800 rounded-xl p-4">
-    <div class="overflow-y-auto log-scroll max-h-[calc(100vh-22rem)]">
-      <div id="audit-log-lines"
-           hx-get="/logs/audit/lines"
-           hx-trigger="load"
-           hx-swap="innerHTML">
-        <span class="text-gray-500">{{ t('logs.audit.empty') }}</span>
+      <div class="log-viewer" id="exec-log-container" tabindex="0" role="region" aria-label="{{ t('activity.tab.technical') }}">
+        <div id="exec-log-lines" hx-get="/logs/exec/lines" hx-trigger="load, every 3s" hx-swap="innerHTML" hx-sync="this:replace" hx-include="#log-level-filters">
+          <span class="help">{{ t("ui.loading") }}</span>
+        </div>
       </div>
-    </div>
-  </div>
-</div>
-
-<script>
-function showTab(name) {
-  document.getElementById('panel-exec').classList.toggle('hidden', name !== 'exec');
-  document.getElementById('panel-exec').classList.toggle('flex', name === 'exec');
-  document.getElementById('panel-audit').classList.toggle('hidden', name !== 'audit');
-  document.getElementById('panel-audit').classList.toggle('flex', name === 'audit');
-
-  document.getElementById('tab-exec').className =
-    name === 'exec'
-      ? 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium'
-      : 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white';
-  document.getElementById('tab-audit').className =
-    name === 'audit'
-      ? 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-900 text-white font-medium'
-      : 'px-4 py-2 rounded-t-lg border border-b-0 border-gray-700 bg-gray-800 text-gray-400 hover:text-white';
-
-  // Trigger audit load on first show
-  if (name === 'audit') {
-    htmx.trigger(document.getElementById('audit-log-lines'), 'load');
-  }
-}
-
-function refreshExecLog() {
-  htmx.trigger(document.getElementById('exec-log-lines'), 'load');
-}
-
-// Auto-scroll execution log to bottom on new content
-document.body.addEventListener('htmx:afterSwap', function(evt) {
-  if (evt.target.id === 'exec-log-lines') {
-    const container = document.getElementById('exec-log-container');
-    container.scrollTop = container.scrollHeight;
-  }
-});
-</script>
+      <p class="help log-note">{{ t("ui.logs.note") }}</p>
+    </section>
+  {% endif %}
 {% endblock %}

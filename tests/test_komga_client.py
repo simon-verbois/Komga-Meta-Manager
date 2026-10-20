@@ -116,3 +116,23 @@ def test_invalid_external_cover_is_rejected() -> None:
     instance.session.get = Mock(return_value=remote)
     with pytest.raises(CoverImageError, match="not a valid image"):
         instance._download_cover_image("https://images.test/invalid.jpg")
+
+
+@pytest.mark.parametrize('payload', [{}, {'content': None}, {'content': {}}, {'content': [], 'last': False}])
+def test_incomplete_series_listing_is_not_an_empty_library(payload):
+    instance = client()
+    instance._make_request = Mock(return_value=payload)
+    with pytest.raises(KomgaAPIError):
+        instance.get_series_in_library('library-1', 'Manga')
+    instance.session.close()
+
+
+def test_failed_later_series_page_does_not_return_partial_catalogue(series):
+    instance = client()
+    instance._make_request = Mock(side_effect=[
+        {'content': [series.model_dump(mode='json', by_alias=True)], 'last': False},
+        None,
+    ])
+    with pytest.raises(KomgaAPIError):
+        instance.get_series_in_library('library-1', 'Manga')
+    instance.session.close()

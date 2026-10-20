@@ -11,7 +11,6 @@ from requests.exceptions import RequestException, Timeout, ConnectionError
 from PIL import Image
 import io
 import urllib3
-from modules.utils import log_frame
 from modules.config import KomgaConfig
 from modules.models import KomgaLibrary, KomgaSeries, KomgaBook, KomgaThumbnail
 from modules.constants import (
@@ -72,7 +71,7 @@ class KomgaClient:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             logger.warning("SSL certificate verification is disabled. This is insecure and not recommended for production use.")
 
-        logger.info(f"Komga Client initialized for URL: {self.base_url}")
+        logger.debug(f"Komga Client initialized for URL: {self.base_url}")
 
     def _is_retryable_error(self, exception: Exception) -> bool:
         """
@@ -209,10 +208,6 @@ class KomgaClient:
             >>> client.get_libraries()
             [KomgaLibrary(id='1', name='Manga'), KomgaLibrary(id='2', name='Comics')]
         """
-        logging.info("|                                                                                                    |")
-        logging.info("|====================================================================================================|")
-        log_frame("Libraries", 'center')
-        logging.info("|====================================================================================================|")
         logger.info("Fetching all libraries from Komga...")
         response_data = self._make_request("GET", "libraries")
 
@@ -256,7 +251,9 @@ class KomgaClient:
             if response_data is None or not isinstance(response_data, dict):
                 raise KomgaAPIError(f"Failed to fetch series from library '{library_name}'")
 
-            content = response_data.get("content", [])
+            content = response_data.get("content")
+            if not isinstance(content, list) or (not content and response_data.get("last") is False):
+                raise KomgaAPIError(f"Incomplete series listing for library '{library_name}'")
             if not content:
                 break
 
@@ -608,6 +605,41 @@ class KomgaClient:
 
         logger.info(f"Successfully uploaded a new poster for series {series_id} from {image_url}")
         return 'uploaded'
+
+    @staticmethod
+    def validate_cover_upload(content: bytes) -> str:
+        """Accept bounded JPEG, PNG and WebP files based on decoded content."""
+        if not content or len(content) > MAX_COVER_IMAGE_BYTES:
+            raise CoverImageError("Cover file must be between 1 byte and 20 MiB")
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                image_format = image.format
+                if image_format not in {"JPEG", "PNG", "WEBP"}:
+                    raise ValueError("Unsupported format")
+                if image.width * image.height > MAX_COVER_IMAGE_PIXELS:
+                    raise ValueError("Image dimensions are too large")
+                image.verify()
+        except Exception as exc:
+            raise CoverImageError("Cover must be a valid JPEG, PNG or WebP image within the size limits") from exc
+        return Image.MIME[image_format]
+
+    def upload_custom_cover(self, entity: str, item_id: str, content: bytes) -> None:
+        """Upload and select a custom poster while preserving existing thumbnails."""
+        if entity not in {"books", "series"}:
+            raise ValueError("Unknown cover target")
+        media_type = self.validate_cover_upload(content)
+        response = self.session.post(
+            f"{self.base_url}{KOMGA_API_V1_PATH}/{entity}/{item_id}/thumbnails",
+            headers=self.headers, params={"selected": "true"},
+            files={"file": ("custom-cover", content, media_type)},
+            verify=self.verify_ssl, timeout=HTTP_TIMEOUTS,
+        )
+        try:
+            response.raise_for_status()
+        except RequestException as exc:
+            raise CoverImageError("Komga rejected the custom cover") from exc
+        finally:
+            response.close()
 
     def remove_uploaded_series_posters(self, series_id: str, dry_run: bool = False) -> int:
         """Remove only explicitly user-uploaded series thumbnails."""

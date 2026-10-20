@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon, alert, switch, save_bar with context %}
+{% block title %}{{ library.name ~ ' — ' if library else '' }}{{ t('nav.libraries') }} — Komga Meta Manager{% endblock %}
+{% block heading %}{{ t('nav.libraries') }}{% endblock %}
+{% block head %}<script src="/static/manual-editor.js" defer></script>{% endblock %}
+{% block content %}
+{% if error %}{{ alert('error', t(error)) }}{% endif %}
+{% if success %}{{ alert('success', t('libraries.saved')) }}{% endif %}
+{% if queued %}{{ alert('success', t('libraries.queued', id=queued)) }}{% endif %}
+{% if message %}{{ alert('error', t(message)) }}{% endif %}
+{% if catalogue_notice %}{{ alert('success', t(catalogue_notice)) }}{% endif %}
+{% if connection_error %}
+  <div class="alert alert-error" role="alert">{{ icon('info') }}<div>{{ t('libraries.connection_error') }} <a class="text-link" href="/settings?tab=connection">{{ t('home.check_connection') }}</a> · <a class="text-link" href="{{ request.url }}">{{ t('libraries.retry') }}</a></div></div>
+{% elif not libraries %}
+  <section class="panel empty-state"><h2>{{ t('libraries.empty') }}</h2><p class="help">{{ t('libraries.empty_help') }}</p><a class="button button-secondary" href="{{ request.url }}">{{ t('libraries.retry') }}</a></section>
+{% else %}
+  <nav class="pill-nav" aria-label="{{ t('libraries.switch') }}">
+    {% for lib in libraries %}
+      <a class="pill{% if library and lib.id == library.id %} selected{% endif %}{% if not lib.included %} pill-muted{% endif %}"
+         href="/libraries?library={{ lib.id | urlencode }}&tab={{ tab }}"{% if library and lib.id == library.id %} aria-current="page"{% endif %}>
+        {{ lib.name }}{% if lib.pending %} <span class="pill-count" aria-label="{{ t('libraries.pending_label', n=lib.pending) }}">{{ lib.pending }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% if library %}
+  <section class="library-head">
+    <div>
+      <h2>{{ library.name }}</h2>
+      <p class="row-meta">
+        {{ t('libraries.type.' ~ content_type) }} ·
+        {% if enabled %}<span class="success-text">{{ t('libraries.included') }}</span>{% else %}{{ t('libraries.not_included') }}{% endif %}
+        {% if pending %} · <a class="text-link" href="/review?library={{ library.id | urlencode }}">{{ plural(pending, 'libraries.to_review_one', 'libraries.to_review_many') }}</a>{% endif %}
+      </p>
+    </div>
+    <div class="library-actions">
+    <form method="post" action="/libraries/{{ library.id }}/check">
+      <button type="submit" class="button button-secondary">{{ icon('refresh') }}{{ t('libraries.check') }}</button>
+    </form>
+    <form method="post" action="/libraries/{{ library.id }}/fetch">
+      <button type="submit" class="button button-secondary">{{ icon('fetch') }}{{ t('libraries.fetch') }}</button>
+    </form>
+    </div>
+  </section>
+
+  <nav class="log-tabs" aria-label="{{ t('libraries.tabs') }}">
+    <a class="log-tab{% if tab == 'content' %} selected{% endif %}" href="/libraries?library={{ library.id | urlencode }}"{% if tab == 'content' %} aria-current="page"{% endif %}>{{ icon('books') }}{{ t('libraries.books_tab') if content_type == 'ebook' else t('libraries.series_tab') }}</a>
+    <a class="log-tab{% if tab == 'sources' %} selected{% endif %}" href="/libraries?library={{ library.id | urlencode }}&tab=sources"{% if tab == 'sources' %} aria-current="page"{% endif %}>{{ icon('providers') }}{{ t('sources.title') }}</a>
+    <a class="log-tab{% if tab == 'settings' %} selected{% endif %}" href="/libraries?library={{ library.id | urlencode }}&tab=settings"{% if tab == 'settings' %} aria-current="page"{% endif %}>{{ icon('processing') }}{{ t('libraries.settings_tab') }}</a>
+  </nav>
+
+  {% if tab == 'content' %}
+    <div id="library-content" hx-get="/libraries/{{ library.id }}/content" hx-trigger="load" hx-swap="innerHTML">
+      <p class="help" role="status">{{ t('libraries.loading') }}</p>
+    </div>
+    {% include 'partials/manual_editor.html' %}
+  {% elif tab == 'sources' %}
+    <form method="post" action="/libraries/{{ library.id }}/settings" class="settings-form" data-dirty-form>
+      <input type="hidden" name="section" value="sources">
+      <section class="panel">
+        <div class="section-heading">
+          <h2>{{ t('sources.title') }}</h2>
+          {% if sources_inherited %}<span class="badge badge-neutral">{{ t('libraries.uses_defaults') }}</span>
+          {% else %}<button type="submit" name="reset" value="sources" class="button button-secondary button-small" formnovalidate>{{ t('libraries.reset_defaults') }}</button>{% endif %}
+        </div>
+        {% if content_type == 'ebook' %}<div class="alert alert-info">{{ icon('info') }}<div>{{ t('libraries.ebook_help') }}</div></div>{% endif %}
+        {% include 'partials/sources_form.html' %}
+      </section>
+      {{ save_bar(t('libraries.save_help')) }}
+    </form>
+  {% else %}
+    <form method="post" action="/libraries/{{ library.id }}/settings" class="settings-form" data-dirty-form>
+      <section class="panel">
+        <h2>{{ t('libraries.general') }}</h2>
+        {{ switch('enabled', t('libraries.include'), enabled, t('libraries.include_help')) }}
+        <div class="field field-narrow">
+          <label for="content-type">{{ t('libraries.type') }}</label>
+          <select id="content-type" name="content_type" aria-describedby="content-type-help">
+            {% for kind in ['manga', 'webtoon', 'ebook'] %}<option value="{{ kind }}"{% if content_type == kind %} selected{% endif %}>{{ t('libraries.type.' ~ kind) }}</option>{% endfor %}
+          </select>
+          <p class="help" id="content-type-help">{{ t('libraries.type_help') }}</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <h2>{{ t('rules.title') }}</h2>
+          {% if rules_inherited %}<span class="badge badge-neutral">{{ t('libraries.uses_defaults') }}</span>
+          {% else %}<button type="submit" name="reset" value="rules" class="button button-secondary button-small" formnovalidate>{{ t('libraries.reset_defaults') }}</button>{% endif %}
+        </div>
+        <p class="help section-description">{{ t('libraries.rules_help') if rules_inherited else t('libraries.rules_custom_help') }} <a class="text-link" href="/settings?tab=defaults">{{ t('libraries.edit_defaults') }}</a></p>
+        {% include 'partials/rules_form.html' %}
+        <h3>{{ t('titles.heading') }}</h3>
+        <p class="help section-description" id="book-title-help">{{ t('titles.help') }}</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="book-title-mode">{{ t('titles.style') }}</label>
+            <select id="book-title-mode" name="book_title_mode" aria-describedby="book-title-help" data-reveal-select="book-title-custom" data-reveal-value="custom">
+              {% for mode in ['off', 'volume', 'chapter', 'series', 'custom'] %}<option value="{{ mode }}"{% if processing.book_titles.mode == mode %} selected{% endif %}>{{ t('titles.mode.' ~ mode) }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="book-title-padding">{{ t('titles.padding') }}</label>
+            <select id="book-title-padding" name="book_title_padding">
+              {% for width, example in [(0, '1'), (2, '01'), (3, '001'), (4, '0001')] %}<option value="{{ width }}"{% if processing.book_titles.padding | string == width | string %} selected{% endif %}>{{ example }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field" id="book-title-custom"{% if processing.book_titles.mode != 'custom' %} hidden{% endif %}>
+          <label for="book-title-template">{{ t('titles.template') }}</label>
+          <input id="book-title-template" name="book_title_template" value="{{ processing.book_titles.template }}" maxlength="200" aria-describedby="book-title-template-help">
+          <p class="help" id="book-title-template-help">{{ t('titles.template_help') }}</p>
+        </div>
+        <p class="help">{{ t('titles.scope') }}</p>
+        <p class="help">{{ t('titles.series_help') }}</p>
+      </section>
+
+
+
+      <section class="panel">
+        <h2>{{ t('translation.title') }}</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="translation_mode">{{ t('libraries.translation') }}</label>
+            <select id="translation_mode" name="translation_mode" data-reveal-select="library-language" data-reveal-value="on">
+              <option value="default"{% if translation_mode == 'default' %} selected{% endif %}>{{ t('libraries.translation.default', state=t('common.on') if translation_default else t('common.off'), language=default_language) if translation_default else t('libraries.translation.default_off') }}</option>
+              <option value="on"{% if translation_mode == 'on' %} selected{% endif %}>{{ t('libraries.translation.on') }}</option>
+              <option value="off"{% if translation_mode == 'off' %} selected{% endif %}>{{ t('libraries.translation.off') }}</option>
+            </select>
+          </div>
+          <div class="field" id="library-language"{% if translation_mode != 'on' %} hidden{% endif %}>
+            <label for="target_language">{{ t('translation.language') }}</label>
+            <select id="target_language" name="target_language">
+              {% for code, name in languages %}<option value="{{ code }}"{% if code == language %} selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <p class="help">{% if translation_configured %}{{ t('libraries.translation_help') }}{% else %}{{ t('libraries.translation_setup') }}{% endif %} <a class="text-link" href="/settings?tab=translation">{{ t('libraries.translation_settings') }}</a></p>
+      </section>
+      {{ save_bar(t('libraries.save_help')) }}
+    </form>
+  {% endif %}
+  {% endif %}
+{% endif %}
+{% endblock %}

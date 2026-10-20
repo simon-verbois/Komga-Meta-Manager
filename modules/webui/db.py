@@ -6,6 +6,7 @@ Tables:
   - users        : single account (username + bcrypt hash)
   - settings     : key/value store (session_secret, app_config JSON, etc.)
   - audit_log    : immutable log of user actions (config saves, runs, etc.)
+  - jobs         : persistent queue, settings snapshots and processing outcomes
 """
 import json
 import logging
@@ -72,7 +73,34 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 action     TEXT    NOT NULL,
                 detail     TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                config TEXT NOT NULL,
+                series_ids TEXT,
+                book_ids TEXT,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                processed INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS jobs_status_id ON jobs (status, id);
+            CREATE TABLE IF NOT EXISTS job_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL REFERENCES jobs(id),
+                timestamp TEXT NOT NULL,
+                level TEXT NOT NULL,
+                message TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS job_logs_job_id ON job_logs (job_id, id);
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "book_ids" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN book_ids TEXT")
     logger.info("Database initialized at %s", DB_PATH)
 
 
@@ -188,3 +216,12 @@ def count_audit_log() -> int:
     with get_db() as conn:
         row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
         return row[0]
+
+
+def append_job_log(job_id: int, level: str, message: str) -> None:
+    """Persist every worker message independently of the live memory buffer."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO job_logs (job_id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+            (job_id, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), level, message),
+        )

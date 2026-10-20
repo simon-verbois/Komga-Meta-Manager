@@ -7,7 +7,6 @@ import logging
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
-from modules.utils import log_frame
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +45,6 @@ class Cache:
                     loaded_cache = json.load(f)
 
                 # Check cache version compatibility
-                logging.info("|                                                                                                    |")
-                logging.info("|====================================================================================================|")
-                log_frame("Metadata", 'center')
-                logging.info("|====================================================================================================|")
                 cached_version = loaded_cache.get(VERSION_KEY, "unknown")
                 if cached_version != self.current_version:
                     logger.warning(
@@ -107,10 +102,6 @@ class Cache:
 
     def save_to_disk(self):
         """Saves the current cache state to a JSON file."""
-        logging.info("|                                                                                                    |")
-        logging.info("|====================================================================================================|")
-        log_frame("Cache Result", 'center')
-        logging.info("|====================================================================================================|")
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             # Include current version in the cache

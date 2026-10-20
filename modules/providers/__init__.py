@@ -65,6 +65,8 @@ def get_providers(configs: Iterable[ProviderConfig], cache_dir: Path) -> Optiona
     """Initialize every configured provider in priority order."""
     entries = []
     for config in sorted(configs, key=lambda item: item.priority):
+        if not config.enabled:
+            continue
         provider = get_provider(config, cache_dir)
         if provider is None:
             return None

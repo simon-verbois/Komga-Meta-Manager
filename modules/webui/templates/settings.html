@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon, alert, field, checkbox, switch, save_bar with context %}
+{% block title %}{{ t('nav.settings') }} — Komga Meta Manager{% endblock %}
+{% block heading %}{{ t('nav.settings') }}{% endblock %}
+{% block content %}
+<div class="settings-page">
+  <nav class="log-tabs" aria-label="{{ t('nav.settings') }}">
+    {% for key, glyph in [('connection', 'komga'), ('defaults', 'processing'), ('automation', 'system'), ('translation', 'translation')] %}
+      {% if key == 'connection' or configured %}
+        <a class="log-tab{% if tab == key %} selected{% endif %}" href="/settings?tab={{ key }}"{% if tab == key %} aria-current="page"{% endif %}>{{ icon(glyph) }}{{ t('settings.' ~ key) }}</a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  {% if success %}{{ alert('success', t('settings.saved.' ~ tab)) }}{% endif %}
+  {% if error %}
+    <div class="alert alert-error" role="alert" tabindex="-1" data-form-error>{{ icon('info') }}<div>
+      <strong>{{ t('config.error') }}</strong>
+      {% if error is mapping %}<ul>{% for name, msg in error.items() %}<li>{{ name }}: {{ msg }}</li>{% endfor %}</ul>{% else %}<p>{{ error }}</p>{% endif %}
+      <p>{{ t('ui.validation.help') }}</p>
+    </div></div>
+  {% endif %}
+
+  {% if tab == 'connection' %}
+    {% set k = cfg.get('komga', {}) %}
+    {% if not configured %}<div class="alert alert-info">{{ icon('info') }}<div><strong>{{ t('connection.welcome') }}</strong> {{ t('connection.welcome_help') }}</div></div>{% endif %}
+    <form method="post" action="/settings/connection" id="komga-form" class="settings-form" data-dirty-form>
+      <section class="panel">
+        <h2>{{ t('connection.title') }}</h2>
+        {{ field('url', t('config.komga.url'), k.get('url', ''), type='url', required=true, help=t('ui.connection.url.help')) }}
+        <div class="field">
+          <label for="api-key">{{ t("config.komga.api_key") }}</label>
+          <div class="input-action">
+            <input type="password" id="api-key" name="api_key" value="{{ k.get('api_key', '') }}" required autocomplete="off" spellcheck="false" aria-describedby="api-key-help">
+            <button type="button" class="button button-secondary" data-secret="api-key" aria-controls="api-key" aria-pressed="false">{{ t("common.show") }}</button>
+          </div>
+          <p class="help" id="api-key-help">{{ t('connection.key_help') }}</p>
+        </div>
+        {{ checkbox('verify_ssl', t('config.komga.verify_ssl'), k.get('verify_ssl', True), t('ui.connection.ssl')) }}
+        <div class="test-connection">
+          <button type="button" class="button button-secondary" data-test-connection
+                  data-testing="{{ t('connection.testing') }}" data-ok="{{ t('connection.ok') }}" data-fail="{{ t('connection.fail') }}" data-invalid="{{ t('connection.invalid') }}">{{ icon('refresh') }}{{ t('connection.test') }}</button>
+          <p class="help" role="status" data-test-result></p>
+        </div>
+      </section>
+      {{ save_bar(t('connection.save_help') if not configured else t('ui.save.help')) }}
+    </form>
+
+  {% elif tab == 'defaults' %}
+    <p class="page-intro">{{ t('defaults.intro') }}</p>
+    <form method="post" action="/settings/defaults" class="settings-form" data-dirty-form>
+      <section class="panel">
+        <h2>{{ t('rules.title') }}</h2>
+        {% include 'partials/rules_form.html' %}
+      </section>
+      <section class="panel">
+        <h2>{{ t('sources.title') }}</h2>
+        {% include 'partials/sources_form.html' %}
+      </section>
+      {{ save_bar() }}
+    </form>
+
+  {% elif tab == 'automation' %}
+    {% set s = cfg.get('system', {}) %}{% set sched = s.get('scheduler', {}) %}{% set watcher = s.get('watcher', {}) %}
+    <p class="page-intro">{{ t('automation.intro') }}</p>
+    <form method="post" action="/settings/automation" class="settings-form" data-dirty-form>
+      <section class="panel">
+        <h2>{{ t('automation.when') }}</h2>
+        {{ switch('scheduler_enabled', t('automation.daily'), sched.get('enabled', False), t('automation.daily_help')) }}
+        <div class="field-inset field-narrow">{{ field('run_at', t('automation.time'), sched.get('run_at', '04:00'), type='time', help=t('ui.schedule.timezone')) }}</div>
+        {{ switch('watcher_enabled', t('automation.watch'), watcher.get('enabled', False), t('automation.watch_help')) }}
+        <div class="field-inset field-narrow">{{ field('polling_interval_minutes', t('automation.interval'), watcher.get('polling_interval_minutes', 5), type='number', min=1) }}</div>
+      </section>
+      <section class="panel">
+        <h2>{{ t('automation.after') }}</h2>
+        <fieldset class="radio-group">
+          <legend class="sr-only">{{ t('automation.after') }}</legend>
+          <label class="check-row"><input type="radio" name="after_fetch" value="review"{% if not s.get('auto_publish') %} checked{% endif %}><span><span class="check-title">{{ t('automation.review') }}</span><span class="help">{{ t('automation.review_help') }}</span></span></label>
+          <label class="check-row"><input type="radio" name="after_fetch" value="publish"{% if s.get('auto_publish') %} checked{% endif %}><span><span class="check-title">{{ t('automation.publish') }}</span><span class="help">{{ t('automation.publish_help') }}</span></span></label>
+        </fieldset>
+      </section>
+      {{ save_bar() }}
+    </form>
+
+  {% elif tab == 'translation' %}
+    {% set tr = cfg.get('translation') or {} %}
+    <form method="post" action="/settings/translation" class="settings-form" data-dirty-form>
+      <section class="panel">
+        <h2>{{ t('translation.title') }}</h2>
+        {{ switch('enabled', t('translation.enabled'), tr.get('enabled', False), t('translation.enabled_help')) }}
+        <div class="form-grid">
+          <div class="field">
+            <label for="tr-provider">{{ t("config.translation.provider") }}</label>
+            <select name="provider" id="tr-provider" data-reveal-select="deepl-section" data-reveal-value="deepl">
+              <option value="google"{% if tr.get('provider', 'google') == 'google' %} selected{% endif %}>{{ t("config.translation.google") }}</option>
+              <option value="deepl"{% if tr.get('provider') == 'deepl' %} selected{% endif %}>DeepL</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="target_language">{{ t('translation.language') }}</label>
+            <select id="target_language" name="target_language">
+              {% for code, name in languages %}<option value="{{ code }}"{% if code == language %} selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div id="deepl-section"{% if tr.get('provider', 'google') != 'deepl' %} hidden{% endif %}>
+          <div class="field">
+            <label for="deepl_api_key">{{ t("config.translation.deepl_key") }}</label>
+            <div class="input-action">
+              <input type="password" id="deepl_api_key" name="deepl_api_key" value="{{ (tr.get('deepl') or {}).get('api_key', '') }}" autocomplete="off" spellcheck="false">
+              <button type="button" class="button button-secondary" data-secret="deepl_api_key" aria-controls="deepl_api_key" aria-pressed="false">{{ t("common.show") }}</button>
+            </div>
+          </div>
+        </div>
+        <p class="help">{{ t('translation.libraries_help') }}</p>
+      </section>
+      {{ save_bar() }}
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

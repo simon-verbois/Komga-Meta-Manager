@@ -48,3 +48,10 @@ Komga Meta Manager doit devenir une application simple et agréable pour gérer 
 - Ce script reconstruit l'image et recrée le conteneur `komga-meta-manager-dev` avec `compose-testing.yml` (projet Compose `kmm-dev`).
 - Vérifier ensuite que `http://localhost:8765/health` répond et que les fichiers applicatifs et ressources embarquées modifiés sont à jour dans le conteneur. Pour une modification de l'interface, vérifier également le rendu concerné.
 - Signaler explicitement tout échec de reconstruction ou de démarrage ; ne pas annoncer une modification disponible sur le dev sans l'avoir vérifiée.
+
+## Données locales uniquement
+
+- Ne jamais publier ni téléverser de contenu du projet vers un service cloud : pas d'artefact claude.ai, de document partagé, de gist, de pastebin ni d'hébergement externe, y compris pour un audit, un rapport ou des captures d'écran.
+- Produire les livrables (rapports, audits, maquettes, captures) sous forme de fichiers locaux et indiquer leur chemin.
+- Les pages HTML locales ne chargent aucune ressource externe (polices, scripts, CDN) ; tout est embarqué ou servi localement.
+- Pour les vérifications visuelles, utiliser une instance locale isolée et de fausses réponses Komga ; ne jamais exposer de données réelles hors de la machine.

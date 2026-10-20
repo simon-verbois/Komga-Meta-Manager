@@ -9,10 +9,25 @@ reads from this buffer.
 import logging
 import threading
 from collections import deque
+from collections.abc import Collection
 from datetime import datetime, timezone
-from typing import List
+from enum import Enum
 
 MAX_LINES = 500
+
+
+class LogLevel(str, Enum):
+    """Levels exposed by the execution log filters."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+LOG_LEVELS = tuple(level.value for level in LogLevel)
+DEFAULT_LOG_LEVELS = LOG_LEVELS[1:]
 
 _lock = threading.RLock()
 _buffer: deque = deque(maxlen=MAX_LINES)
@@ -23,12 +38,13 @@ class BufferHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            message = self.format(record)
             entry = {
                 "ts": datetime.fromtimestamp(record.created, timezone.utc).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
                 "level": record.levelname,
-                "msg": self.format(record),
+                "msg": message,
             }
             with _lock:
                 _buffer.append(entry)
@@ -46,28 +62,16 @@ def install_handler() -> BufferHandler:
             return existing
     handler = BufferHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(handler)
     return handler
 
 
-def get_lines(include_debug: bool = False) -> List[dict]:
-    """
-    Return a snapshot of the buffer.
-
-    Args:
-        include_debug: When False (the default) DEBUG entries are filtered out.
-    """
+def get_lines(levels: Collection[str] | None = None) -> list[dict]:
+    """Return entries matching the selected levels; an empty selection shows none."""
+    selected = set(DEFAULT_LOG_LEVELS if levels is None else levels)
     with _lock:
-        lines = list(_buffer)
-    if not include_debug:
-        lines = [e for e in lines if e["level"] != "DEBUG"]
-    return lines
+        return [entry for entry in _buffer if entry["level"] in selected]
 
 
 def clear_buffer() -> None:
