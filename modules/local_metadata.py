@@ -35,6 +35,46 @@ class LocalCatalogue:
                 conn.execute("ALTER TABLE local_metadata ADD COLUMN remote TEXT")
             if "missing" not in columns:
                 conn.execute("ALTER TABLE local_metadata ADD COLUMN missing INTEGER NOT NULL DEFAULT 0")
+            conn.execute("""CREATE TABLE IF NOT EXISTS local_catalogue_scopes (
+                server TEXT NOT NULL, entity TEXT NOT NULL, scope_id TEXT NOT NULL,
+                PRIMARY KEY (server, entity, scope_id))""")
+
+    def has_local_scope(self, entity: str, scope_id: str) -> bool:
+        """Keep a deliberately emptied catalogue local until an explicit refresh."""
+        with get_db() as conn:
+            return conn.execute(
+                "SELECT 1 FROM local_catalogue_scopes WHERE server=? AND entity=? AND scope_id=?",
+                (self.server, entity, scope_id),
+            ).fetchone() is not None
+
+    def remove_item(self, library_id: str, entity: str, identifier: str) -> bool:
+        """Delete only local metadata; series removal also deletes its local books."""
+        if entity not in ("series", "books") or self.preview:
+            return False
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT series_id FROM local_metadata WHERE server=? AND library_id=? AND entity=? AND id=?",
+                (self.server, library_id, entity, identifier),
+            ).fetchone()
+            if row is None:
+                return False
+            if entity == "series":
+                conn.execute(
+                    "DELETE FROM local_metadata WHERE server=? AND library_id=? AND series_id=?",
+                    (self.server, library_id, identifier),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM local_metadata WHERE server=? AND library_id=? AND entity=? AND id=?",
+                    (self.server, library_id, entity, identifier),
+                )
+            scope_id = library_id if entity == "series" else row["series_id"]
+            conn.execute(
+                "INSERT OR IGNORE INTO local_catalogue_scopes VALUES (?, ?, ?)",
+                (self.server, entity, scope_id),
+            )
+        return True
 
     def reconcile_series(self, library_id: str, present_ids: set[str]) -> None:
         """Mark absent series and their books after a complete successful remote listing."""
@@ -414,7 +454,7 @@ class LocalKomgaClient:
 
     def get_series_in_library(self, library_id, library_name):
         cached = self.store.items("series", library_id)
-        if not self.refresh and cached:
+        if not self.refresh and (cached or self.store.has_local_scope("series", library_id)):
             items = cached
         else:
             remote_items = self.remote.get_series_in_library(library_id, library_name)
@@ -438,7 +478,7 @@ class LocalKomgaClient:
     def get_books_in_series(self, series_id, series_name):
         library_id = self.series_libraries[series_id]
         cached = self.store.items("books", library_id, series_id)
-        if not self.refresh and cached:
+        if not self.refresh and (cached or self.store.has_local_scope("books", series_id)):
             return cached
         return [
             self.store.import_item(
@@ -489,6 +529,30 @@ class LocalKomgaClient:
                 response.close()
         self.remote.validate_cover_upload(content)
         return content
+
+    def update_book_poster(self, identifier, image_url, overwrite_existing=False, dry_run=False):
+        """Stage a book cover locally while preserving manual choices and custom covers."""
+        row = self.store.get("books", identifier)
+        if "cover" in json.loads(row["manual"]) or (row["cover"] and not overwrite_existing):
+            return "preserved"
+        thumbnails = self.remote.get_book_thumbnails(identifier)
+        if not overwrite_existing and any(item.get("type", "").upper() == "USER_UPLOADED" for item in thumbnails):
+            return "preserved"
+        content, _, _ = self.remote._download_cover_image(image_url)
+        if dry_run:
+            return "would_upload"
+        self.store.save_cover("books", identifier, content)
+        return "uploaded"
+
+    def remove_uploaded_book_posters(self, identifier, dry_run=False):
+        """Stage removal of custom book covers without changing Komga during fetch."""
+        row = self.store.get("books", identifier)
+        if "cover" in json.loads(row["manual"]):
+            return 0
+        count = sum(item.get("type", "").upper() == "USER_UPLOADED" for item in self.remote.get_book_thumbnails(identifier))
+        if not dry_run and (count or row["cover"]):
+            self.store.save_cover("books", identifier, None)
+        return count
 
     def update_series_poster(self, identifier, image_url, overwrite_existing=False, dry_run=False):
         row = self.store.get("series", identifier)

@@ -12,7 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class MetadataProviderError(RuntimeError):
-    """Raised when a provider search fails rather than returning no matches."""
+    """A source failure with optional HTTP details for actionable diagnostics."""
+
+    def __init__(self, message: str, *, status_code: int | None = None, reason: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.reason = reason
 
 class MetadataProvider(ABC):
     """Abstract base class for a metadata provider."""

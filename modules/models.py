@@ -43,6 +43,10 @@ class KomgaSeries(BaseModel):
     metadata: KomgaSeriesMetadata
 
 class KomgaBookMetadata(BaseModel):
+    isbn: str = ""
+    isbn_lock: bool = Field(False, alias="isbnLock")
+    links: List[dict] = Field(default_factory=list)
+    links_lock: bool = Field(False, alias="linksLock")
     title: str
     title_lock: bool = Field(..., alias='titleLock')
     summary: str
@@ -90,6 +94,11 @@ class MetadataCandidate(BaseModel):
     popularity: int = 0
     year: Optional[str] = None
     media_type: Optional[str] = None
+    author_names: List[str] = Field(default_factory=list)
+    isbns: List[str] = Field(default_factory=list)
+    language: Optional[str] = None
+    publication_date: Optional[str] = None
+    publisher: Optional[str] = None
 
     @property
     def display_title(self) -> str:
@@ -99,7 +108,6 @@ class MetadataCandidate(BaseModel):
 class MetadataRecord(MetadataCandidate):
     description: Optional[str] = None
     description_language: Optional[str] = None
-    publisher: Optional[str] = None
     status: Optional[Literal["ONGOING", "ENDED", "ABANDONED", "HIATUS"]] = None
     genres: List[str] = Field(default_factory=list)
     genre_languages: Dict[str, str] = Field(default_factory=dict)

@@ -25,7 +25,12 @@
   const input = name => form.elements.namedItem(name);
   const endpoint = `/libraries/${libraryId}/manual`;
   function showFeedback(message, kind = 'error') {
-    feedback.className = `alert alert-${kind}`;
+    if (kind === 'success' || (kind === 'info' && message !== text('saving'))) {
+      feedback.hidden = true;
+      window.KMM.notify(message, kind);
+      return;
+    }
+    feedback.className = kind === 'info' ? 'help' : `alert alert-${kind}`;
     feedback.textContent = message;
     feedback.hidden = false;
     feedback.setAttribute('role', kind === 'error' ? 'alert' : 'status');
@@ -138,7 +143,7 @@
     loading.hidden = false;
     provider.hidden = true;
     skipSection.hidden = true;
-    document.getElementById('manual-item-title').textContent = opener?.querySelector('.book-title')?.textContent || '';
+    document.getElementById('manual-item-title').textContent = opener?.closest('.book-card')?.querySelector('.book-title')?.textContent || '';
     const params = new URLSearchParams({series_id: selection.series_id});
     if (selection.book_id) params.set('book_id', selection.book_id);
     try {
@@ -288,7 +293,8 @@
     try {
       const response = await fetch(`/libraries/${libraryId}/skip`, {method: 'POST', body: data, redirect: 'error'});
       if (!response.ok) throw new Error();
-      skipStatus.textContent = text(wanted ? 'skip_on' : 'skip_off');
+      skipStatus.textContent = '';
+      window.KMM.notify(text(wanted ? 'skip_on' : 'skip_off'), 'success');
       document.querySelectorAll(`[data-overwrite][data-series-id="${CSS.escape(selection.series_id)}"]`).forEach(button => {
         button.dataset.skipped = wanted ? '1' : '0';
         button.closest('.book-card').dataset.skipped = wanted ? '1' : '0';

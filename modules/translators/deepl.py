@@ -2,6 +2,7 @@
 """
 Translator implementation using the DeepL API.
 """
+
 import logging
 import json
 import backoff
@@ -14,10 +15,15 @@ from modules.cache_naming import get_translation_cache_filename
 
 logger = logging.getLogger(__name__)
 
+
 class DeepLTranslator(Translator):
     """A translator using the official DeepL API."""
 
-    def __init__(self, config: DeepLConfig):
+    def __init__(self, config: DeepLConfig, fallback_to_google: bool = True):
+        self.fallback_to_google = fallback_to_google
+        self.fallback = None
+        self.unavailable = False
+        self.cache_hits = self.cache_misses = 0
         try:
             self.translator = deepl.Translator(config.api_key)
             self.cache_path = Path("/config/cache") / get_translation_cache_filename("deepl")
@@ -27,7 +33,9 @@ class DeepLTranslator(Translator):
             self.unsaved_changes = 0
             logger.info("DeepL Translator initialized successfully with persistent cache.")
         except Exception as e:
-            logger.error(f"Failed to initialize DeepL Translator: {e}")
+            logger.warning(
+                "DeepL could not initialize (%s); Google fallback follows the configured policy.", type(e).__name__
+            )
             self.translator = None
             self.cache_path = Path("/config/cache") / get_translation_cache_filename("deepl")
             self.cache = {}
@@ -36,7 +44,7 @@ class DeepLTranslator(Translator):
     def _load_cache_from_disk(self) -> dict:
         """Loads the translation cache from a JSON file."""
         try:
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
+            with open(self.cache_path, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
                 logger.info(f"Loaded {len(cache_data)} translations from persistent cache.")
                 return cache_data
@@ -57,6 +65,8 @@ class DeepLTranslator(Translator):
         Note:
             Resets the unsaved_changes counter to 0 after successful save.
         """
+        if self.fallback is not None:
+            self.fallback.save_cache_to_disk()
         if not self.cache:
             logger.info("Translation cache is empty. Nothing to save.")
             return
@@ -66,8 +76,8 @@ class DeepLTranslator(Translator):
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write to temporary file first for atomic writes
-            temp_path = self.cache_path.with_suffix('.tmp')
-            with open(temp_path, 'w', encoding='utf-8') as f:
+            temp_path = self.cache_path.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, indent=4, ensure_ascii=False, sort_keys=True)
 
             # Atomic rename
@@ -87,6 +97,8 @@ class DeepLTranslator(Translator):
         Provides insights into cache effectiveness including hit ratio,
         total translations performed, and API calls avoided.
         """
+        if self.fallback is not None:
+            self.fallback.log_cache_summary()
         total_lookups = self.cache_hits + self.cache_misses
         if total_lookups > 0:
             hit_ratio = (self.cache_hits / total_lookups) * 100
@@ -110,7 +122,7 @@ class DeepLTranslator(Translator):
         """
         Translates text, using a multi-layered cache approach.
         """
-        if not self.translator or not text:
+        if not text:
             return text
 
         if languages_match(source_language, target_language):
@@ -129,6 +141,10 @@ class DeepLTranslator(Translator):
             logger.debug(f"Cache hit for '{text}' -> '{self.cache[cache_key]}'")
             return self.cache[cache_key]
 
+        # Cached DeepL results remain usable after an account-wide failure.
+        if not self.translator or self.unavailable:
+            return self._translate_with_google(text, target_language, source_language)
+
         # Layer 2: API Call
         self.cache_misses += 1
         logger.debug(f"Cache miss for '{text}'. Calling translation API.")
@@ -139,7 +155,33 @@ class DeepLTranslator(Translator):
             self._autosave_cache()  # Periodic save
             return translated_text
         except Exception as e:
-            logger.error(f"Translation failed permanently for '{text}' after multiple retries: {e}")
+            if isinstance(e, (deepl.QuotaExceededException, deepl.AuthorizationException)):
+                self.unavailable = True
+                reason = "quota exhausted" if isinstance(e, deepl.QuotaExceededException) else "access denied"
+                logger.warning("DeepL %s; further DeepL API calls are skipped for this translator session.", reason)
+            else:
+                logger.warning("DeepL translation failed (%s).", type(e).__name__)
+            return self._translate_with_google(text, target_language, source_language)
+
+    def _translate_with_google(self, text: str, target_language: str, source_language: str | None) -> str:
+        """Use a separate Google cache and keep the original text if both services fail."""
+        if not self.fallback_to_google:
+            logger.warning("Google Translate fallback is disabled; the original text is kept.")
+            return text
+        try:
+            if self.fallback is None:
+                from modules.translators.google import GoogleTranslator
+
+                self.fallback = GoogleTranslator()
+                logger.info("Using Google Translate fallback for failed DeepL translations.")
+            language = base_language(target_language)
+            if language == "zh":
+                language = "zh-tw" if target_language.lower().replace("_", "-") in {"zh-tw", "zh-hant"} else "zh-cn"
+            elif language == "nb":
+                language = "no"
+            return self.fallback.translate(text, language, source_language=source_language)
+        except Exception as exc:
+            logger.warning("Google Translate fallback failed (%s); the original text is kept.", type(exc).__name__)
             return text
 
     def _should_save_cache(self) -> bool:
@@ -153,13 +195,11 @@ class DeepLTranslator(Translator):
             self.save_cache_to_disk()
 
     def is_not_retryable(e):
-        return False
+        return isinstance(e, (deepl.QuotaExceededException, deepl.AuthorizationException)) or getattr(
+            e, "http_status_code", None
+        ) in {400, 403, 404, 413, 456}
 
-    @backoff.on_exception(backoff.expo,
-                          deepl.DeepLException,
-                          max_tries=3,
-                          giveup=is_not_retryable,
-                          logger=logger)
+    @backoff.on_exception(backoff.expo, deepl.DeepLException, max_tries=3, giveup=is_not_retryable, logger=None)
     def _translate_with_retry(
         self,
         text: str,

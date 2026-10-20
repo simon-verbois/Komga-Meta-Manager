@@ -190,7 +190,7 @@ def test_protected_routes_require_login(client):
                  "/review", "/libraries"):
         assert c.get(path).headers["location"] == "/login"
     for path in ("/fetch", "/onboarding", "/settings/connection", "/settings/defaults", "/settings/automation",
-                 "/settings/translation", "/review/publish", "/review/discard", "/jobs/1/cancel",
+                 "/settings/translation", "/settings/services", "/review/publish", "/review/discard", "/jobs/1/cancel",
                  "/libraries/library-1/settings", "/libraries/library-1/fetch"):
         assert c.post(path).headers["location"] == "/login"
     assert c.post("/libraries/library-1/skip").status_code == 401
@@ -402,7 +402,7 @@ def test_settings_tabs_render_and_legacy_addresses_redirect(configured_client):
     raw["translation"] = None
     config_store.save_config_to_db(raw)
     for tab, marker in (("connection", 'id="komga-form"'), ("defaults", 'name="rule_summary"'),
-                        ("automation", 'name="after_fetch"'), ("translation", 'name="provider"')):
+                        ("automation", 'name="after_fetch"'), ("services", 'name="provider"')):
         response = c.get(f"/settings?tab={tab}")
         assert response.status_code == 200
         assert marker in response.text
@@ -410,7 +410,7 @@ def test_settings_tabs_render_and_legacy_addresses_redirect(configured_client):
     assert 'id="komga-form"' in c.get("/settings?tab=unknown").text
     assert 'id="komga-form"' in c.get("/settings?tab=komga").text
     for section, tab in (("komga", "connection"), ("system", "automation"), ("providers", "defaults"),
-                         ("processing", "defaults"), ("translation", "translation"), ("unknown", "connection")):
+                         ("processing", "defaults"), ("translation", "services"), ("unknown", "connection")):
         response = c.get(f"/config/{section}")
         assert response.status_code == 302
         assert response.headers["location"] == f"/settings?tab={tab}"
@@ -663,3 +663,130 @@ def test_review_page_without_changes_and_navigation(configured_client):
     response = c.post("/review/publish")
     assert "message=review.nothing" in response.headers["location"]
     assert c.app.state.job_queue.snapshot()["jobs"] == []
+
+
+def test_external_services_centralizes_keys_and_keeps_existing_values(configured_client):
+    c, _ = configured_client
+    response = c.post("/settings/services", data={
+        "section": "all", "google_books_api_key": "books-secret", "deepl_api_key": "deepl-secret",
+        "enabled": "1", "provider": "deepl", "target_language": "fr",
+    })
+    assert response.status_code == 303 and response.headers["location"] == "/settings?tab=services&saved=1"
+    cfg = config_store.get_config()
+    assert cfg.google_books_api_key == "books-secret"
+    assert cfg.translation.deepl.api_key == "deepl-secret" and cfg.translation.enabled
+    page = c.get("/settings?tab=services").text
+    assert 'name="google_books_api_key"' in page and 'name="deepl_api_key"' in page
+    assert "books-secret" not in page and "deepl-secret" not in page
+    assert "External services" in page and "Metadata Defaults" in page
+    assert 'name="google_books_api_key"' not in c.get("/settings?tab=defaults").text
+    c.post("/settings/services", data={"section": "all", "enabled": "1", "provider": "deepl", "target_language": "fr"})
+    assert config_store.get_config().google_books_api_key == "books-secret"
+    assert config_store.get_config().translation.deepl.api_key == "deepl-secret"
+    c.post("/settings/defaults", data={"google_books_api_key": "should-be-ignored", "remove_google_books_key": "1"})
+    assert config_store.get_config().google_books_api_key == "books-secret"
+    c.post("/settings/services", data={"section": "metadata", "remove_google_books_key": "1"})
+    assert config_store.get_config().google_books_api_key == ""
+    assert config_store.get_config().translation.enabled
+
+
+def test_external_services_validation_is_atomic_and_keeps_entered_keys(configured_client):
+    c, _ = configured_client
+    c.post("/settings/services", data={"section": "metadata", "google_books_api_key": "original-key"})
+    response = c.post("/settings/services", data={
+        "section": "all", "google_books_api_key": "entered-books-key", "deepl_api_key": "entered-deepl-key",
+        "enabled": "1", "provider": "unknown", "target_language": "fr",
+    })
+    assert response.status_code == 200 and "Some values are invalid" in response.text
+    assert 'value="entered-books-key"' in response.text and 'value="entered-deepl-key"' in response.text
+    assert config_store.get_config().google_books_api_key == "original-key"
+    assert config_store.get_config().translation is None
+    c.post("/settings/services", data={"section": "translation", "enabled": "1", "provider": "deepl", "deepl_api_key": "original-deepl", "target_language": "fr"})
+    response = c.post("/settings/services", data={"section": "translation", "enabled": "1", "provider": "deepl", "remove_deepl_key": "1", "target_language": "fr"})
+    assert "Some values are invalid" in response.text
+    assert 'name="remove_deepl_key" value="1" checked' in response.text
+    assert config_store.get_config().translation.deepl.api_key == "original-deepl"
+    c.post("/settings/services", data={"section": "translation", "provider": "google", "remove_deepl_key": "1", "target_language": "en"})
+    assert config_store.get_config().translation.deepl is None
+    assert config_store.get_config().google_books_api_key == "original-key"
+
+
+def test_translation_bookmarks_and_source_setup_links_open_external_services(configured_client):
+    c, _ = configured_client
+    page = c.get("/settings?tab=translation")
+    assert page.status_code == 200 and 'href="/settings?tab=services" aria-current="page"' in page.text
+    assert c.get("/config/translation").headers["location"] == "/settings?tab=services"
+    assert c.post("/settings/services", data={"section": "metadata"}).status_code == 303
+    raw = config_store.get_config_dict()
+    raw["library_settings"]["library-2"] = {"name": "Webtoons", "content_type": "ebook"}
+    config_store.save_config_to_db(raw)
+    page = c.get("/libraries?library=library-2&tab=sources")
+    assert 'href="/settings?tab=services#google-books"' in page.text
+
+
+def test_job_logs_filter_before_latest_window_and_keep_full_download(configured_client):
+    c, _ = configured_client
+    c.post('/fetch')
+    job_id = last_job()['id']
+    for index in range(205):
+        db.append_job_log(job_id, 'INFO', f'visible-{index:03d}')
+    for index in range(205):
+        db.append_job_log(job_id, 'DEBUG', f'debug-{index:03d}')
+    db.append_job_log(job_id, 'WARNING', '<unsafe>\nsecond line')
+
+    latest = c.get(f'/logs/jobs/{job_id}/lines')
+    assert latest.status_code == 200
+    assert 'debug-' not in latest.text
+    assert 'visible-000' not in latest.text and 'visible-005' not in latest.text
+    assert 'visible-006' in latest.text and 'visible-204' in latest.text
+    assert latest.text.index('visible-006') < latest.text.index('visible-204')
+    assert '&lt;unsafe&gt;\nsecond line' in latest.text
+    assert '411 lines' in latest.text
+    assert 'every 1s' in latest.text
+
+    debug = c.get(f'/logs/jobs/{job_id}/lines?levels=DEBUG')
+    assert 'debug-005' in debug.text and 'debug-204' in debug.text
+    assert 'visible-' not in debug.text
+    assert 'No lines match' in c.get(f'/logs/jobs/{job_id}/lines?filtered=true').text
+    assert c.get(f'/logs/jobs/{job_id}/lines?levels=INVALID').status_code == 422
+    assert c.get(f'/logs/jobs/{job_id}/lines?page=0').status_code == 422
+    assert 'visible-000' in c.get(f'/logs/jobs/{job_id}/lines?page=1').text
+
+    db.append_job_log(job_id, 'INFO', 'new live message')
+    assert 'new live message' in c.get(f'/logs/jobs/{job_id}/lines').text
+    with db.get_db() as conn:
+        conn.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (job_id,))
+    assert 'every 1s' not in c.get(f'/logs/jobs/{job_id}/lines').text
+    download = c.get(f'/logs/jobs/{job_id}/download')
+    assert 'visible-000' in download.text and 'debug-000' in download.text
+    assert 'debug-204' in download.text and 'new live message' in download.text
+
+
+def test_job_logs_start_empty_then_receive_output_and_require_login(configured_client):
+    c, _ = configured_client
+    c.post('/fetch')
+    job_id = last_job()['id']
+    empty = c.get(f'/logs/jobs/{job_id}/lines')
+    assert 'every 1s' in empty.text
+    db.append_job_log(job_id, 'INFO', 'first output')
+    assert 'first output' in c.get(f'/logs/jobs/{job_id}/lines').text
+    assert c.get('/logs/jobs/999999/lines').status_code == 404
+    c.cookies.clear()
+    assert c.get(f'/logs/jobs/{job_id}/lines').status_code == 401
+
+
+def test_google_translation_fallback_defaults_on_and_can_be_disabled(configured_client):
+    c, _ = configured_client
+    page = c.get("/settings?tab=services").text
+    assert 'name="google_fallback" value="1" checked' in page
+    form = {"section": "all", "provider": "deepl", "enabled": "1", "target_language": "fr",
+            "deepl_api_key": "fixture-key", "translation_options_present": "1"}
+    assert c.post("/settings/services", data=form).status_code == 303
+    assert config_store.get_config().translation.google_fallback is False
+    # Credential-only saves and legacy clients keep the saved fallback preference.
+    c.post("/settings/services", data={"section": "metadata", "google_books_api_key": "fixture-books"})
+    assert config_store.get_config().translation.google_fallback is False
+    c.post("/settings/translation", data={"provider": "deepl", "enabled": "1", "target_language": "fr"})
+    assert config_store.get_config().translation.google_fallback is False
+    assert c.post("/settings/services", data={**form, "google_fallback": "1"}).status_code == 303
+    assert config_store.get_config().translation.google_fallback is True

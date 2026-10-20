@@ -148,25 +148,41 @@ def setup_routes(templates: Jinja2Templates) -> APIRouter:
         job = describe_job(row)
         return templates.TemplateResponse(request=request, name="job_detail.html", context={
             "username": username, "job": job, "log_count": total, "problems": problems,
-            "total_pages": max(1, (total + 199) // 200),
+            "log_levels": log_buffer.LOG_LEVELS, "default_log_levels": log_buffer.DEFAULT_LOG_LEVELS,
             "message": request.query_params.get("message"),
         })
 
     @router.get("/jobs/{job_id}/lines", response_class=HTMLResponse)
-    async def job_lines(request: Request, job_id: int, page: int = Query(default=1, ge=1),
-                        levels: list[log_buffer.LogLevel] | None = Query(default=None),
-                        filtered: bool = Query(default=False)):
+    async def job_lines(
+        request: Request,
+        job_id: int,
+        page: int | None = Query(default=None, ge=1),
+        levels: list[log_buffer.LogLevel] | None = Query(default=None),
+        filtered: bool = Query(default=False),
+    ):
         if not get_current_user(request):
             return HTMLResponse(status_code=401)
-        selected = levels if levels is not None else ([] if filtered else log_buffer.LOG_LEVELS)
-        # Page boundaries are stable while a running job appends new messages.
+        selected = levels if levels is not None else ([] if filtered else log_buffer.DEFAULT_LOG_LEVELS)
         with get_db() as conn:
+            job = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not job:
+                return HTMLResponse(status_code=404)
+            total = conn.execute("SELECT COUNT(*) FROM job_logs WHERE job_id=?", (job_id,)).fetchone()[0]
+            # Filter before limiting: DEBUG messages must not crowd visible lines
+            # out of the latest window. Explicit page requests stay chronological.
+            placeholders = ",".join("?" for _ in selected)
+            order = "ASC" if page is not None else "DESC"
             rows = conn.execute(
-                "SELECT timestamp AS ts, level, message AS msg FROM job_logs WHERE job_id=? ORDER BY id LIMIT 200 OFFSET ?",
-                (job_id, (page - 1) * 200),
+                "SELECT timestamp AS ts, level, message AS msg FROM job_logs "
+                f"WHERE job_id=? AND level IN ({placeholders}) ORDER BY id {order} LIMIT 200 OFFSET ?",
+                (job_id, *selected, (page - 1) * 200 if page is not None else 0),
             ).fetchall()
-        return templates.TemplateResponse(request=request, name="partials/exec_log_lines.html", context={
-            "lines": [dict(row) for row in rows if row["level"] in selected], "has_logs": bool(rows),
+        lines = [dict(row) for row in rows]
+        if page is None:
+            lines.reverse()
+        return templates.TemplateResponse(request=request, name="partials/job_log_lines.html", context={
+            "job_id": job_id, "active": job["status"] in ("queued", "running", "stopping"),
+            "lines": lines, "has_logs": total > 0, "log_count": total,
         })
 
     @router.get("/jobs/{job_id}/download")

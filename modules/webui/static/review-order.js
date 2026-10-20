@@ -54,7 +54,8 @@
       const count = documentCopy.querySelector('[data-review-summary-count]');
       if (count) document.querySelector('[data-review-summary-count]').textContent = count.textContent;
       const newList = replacement.querySelector('[data-review-order]');
-      statusOf(newList).textContent = newList.dataset.saved;
+      statusOf(newList).textContent = '';
+      window.KMM.notify(newList.dataset.saved, 'success');
       if (movedRow && previousY !== undefined) window.scrollBy(0, movedRow.getBoundingClientRect().top - previousY);
       focusBook(newList, movedId);
       confirmed = true;

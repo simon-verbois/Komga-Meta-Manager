@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from modules.config import ProviderConfig
+from .ebooks import OpenlibraryProvider, GooglebooksProvider, BnfProvider
 from .base import MetadataProvider
 from .anilist import AnilistProvider
 from .mangadex import MangadexProvider
@@ -38,7 +39,7 @@ class ProviderChain:
         for entry in self.entries:
             entry.provider.log_cache_summary()
 
-def get_provider(config: ProviderConfig, cache_dir: Path) -> Optional[MetadataProvider]:
+def get_provider(config: ProviderConfig, cache_dir: Path, google_books_api_key: str = "") -> Optional[MetadataProvider]:
     """
     Factory function to get a provider instance based on its name.
     """
@@ -48,6 +49,12 @@ def get_provider(config: ProviderConfig, cache_dir: Path) -> Optional[MetadataPr
         "cache_ttl_hours": config.cache.ttl_hours,
         "preferred_language": config.preferred_language,
     }
+    if provider_lower == 'openlibrary':
+        return OpenlibraryProvider(**kwargs)
+    if provider_lower == 'googlebooks':
+        return GooglebooksProvider(**kwargs, api_key=google_books_api_key)
+    if provider_lower == 'bnf':
+        return BnfProvider(**kwargs)
     if provider_lower == 'anilist':
         logger.info("Using AniList metadata provider.")
         return AnilistProvider(**kwargs)
@@ -61,13 +68,13 @@ def get_provider(config: ProviderConfig, cache_dir: Path) -> Optional[MetadataPr
     return None
 
 
-def get_providers(configs: Iterable[ProviderConfig], cache_dir: Path) -> Optional[ProviderChain]:
+def get_providers(configs: Iterable[ProviderConfig], cache_dir: Path, google_books_api_key: str = "") -> Optional[ProviderChain]:
     """Initialize every configured provider in priority order."""
     entries = []
     for config in sorted(configs, key=lambda item: item.priority):
         if not config.enabled:
             continue
-        provider = get_provider(config, cache_dir)
+        provider = get_provider(config, cache_dir, google_books_api_key) if google_books_api_key else get_provider(config, cache_dir)
         if provider is None:
             return None
         entries.append(ConfiguredProvider(config=config, provider=provider))

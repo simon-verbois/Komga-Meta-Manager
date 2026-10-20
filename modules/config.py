@@ -9,10 +9,11 @@ from typing import List, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
+from modules.source_catalogue import MANGA_PROVIDERS, SUPPORTED_METADATA_PROVIDERS, builtin_templates, compatible_sources
+
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "/config/config.yml"
-SUPPORTED_METADATA_PROVIDERS = ("anilist", "mangadex", "mangaupdates")
 
 class SchedulerConfig(BaseModel):
     """Pydantic model for scheduler settings."""
@@ -84,7 +85,7 @@ class ProviderConfig(BaseModel):
     def validate_provider(cls, value: str) -> str:
         provider = value.strip().lower()
         if provider not in SUPPORTED_METADATA_PROVIDERS:
-            raise ValueError("provider name must be 'anilist', 'mangadex' or 'mangaupdates'")
+            raise ValueError("Unknown metadata provider")
         return provider
 
     @field_validator('preferred_language')
@@ -100,7 +101,7 @@ def default_providers() -> List[ProviderConfig]:
     """Return every metadata provider in the default fallback order."""
     return [
         ProviderConfig(name=name, priority=priority)
-        for priority, name in enumerate(SUPPORTED_METADATA_PROVIDERS, start=1)
+        for priority, name in enumerate(MANGA_PROVIDERS, start=1)
     ]
 
 class AuthorsConfig(BaseModel):
@@ -122,6 +123,8 @@ class RemoveAuthorsConfig(BaseModel):
 class RemoveFlags(BaseModel):
     """Metadata removal flags with safe, non-destructive defaults."""
     summary: bool = False
+    isbn: bool = False
+    release_date: bool = False
     publisher: bool = False
     language: bool = False
     reading_direction: bool = False
@@ -135,6 +138,8 @@ class RemoveFlags(BaseModel):
 class UpdateFlags(BaseModel):
     """Pydantic model for granular update control."""
     summary: bool = True
+    isbn: bool = False
+    release_date: bool = False
     publisher: bool = True
     genres: bool = True
     status: bool = True
@@ -176,7 +181,7 @@ class ProcessingConfig(BaseModel):
     def enforce_remove_priority(self):
         """Enforce that if remove_fields is true for a field, update_fields is automatically set to false."""
         # Simple field mappings
-        simple_fields = ['summary', 'publisher', 'genres', 'status', 'cover_image', 'link']
+        simple_fields = ['isbn', 'release_date', 'summary', 'publisher', 'genres', 'status', 'cover_image', 'link']
 
         for field in simple_fields:
             remove_val = getattr(self.remove_fields, field, False)
@@ -212,6 +217,7 @@ class TranslationConfig(BaseModel):
     enabled: bool = True
     provider: str = "google"
     target_language: str = "EN-US"
+    google_fallback: bool = True
     deepl: Optional[DeepLConfig] = None
 
     @model_validator(mode='after')
@@ -234,6 +240,33 @@ class TranslationConfig(BaseModel):
         self.target_language = language
         return self
 
+class SourceTemplate(BaseModel):
+    """Reusable source settings copied into a library on explicit application."""
+    name: str = Field(min_length=1, max_length=80)
+    content_type: Literal["manga", "webtoon", "ebook"]
+    providers: List[ProviderConfig]
+
+    @model_validator(mode="after")
+    def validate_template(self):
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Template name must not be empty")
+        names = [source.name for source in self.providers]
+        priorities = [source.priority for source in self.providers]
+        if len(names) != len(set(names)) or len(priorities) != len(set(priorities)):
+            raise ValueError("Sources must have unique names and priorities")
+        if any(name not in compatible_sources(self.content_type) for name in names):
+            raise ValueError("Template sources must support its content type")
+        return self
+
+
+class EbookMatch(BaseModel):
+    """An explicitly selected edition for a single book."""
+    provider: Literal["openlibrary", "googlebooks", "bnf"]
+    external_id: str = Field(min_length=1, max_length=160)
+    title: str = ""
+
+
 class LibraryConfig(BaseModel):
     """Library-specific overrides, keyed by the stable Komga library ID."""
     name: str
@@ -244,6 +277,7 @@ class LibraryConfig(BaseModel):
     target_language: Optional[str] = None
     # Series skipped by this library, added to the effective processing exclusions.
     exclude_series: List[str] = Field(default_factory=list)
+    ebook_matches: dict[str, EbookMatch] = Field(default_factory=dict)
 
     @field_validator("providers")
     @classmethod
@@ -261,29 +295,41 @@ class AppConfig(BaseModel):
     system: SystemConfig = Field(default_factory=SystemConfig)
     komga: KomgaConfig
     library_settings: dict[str, LibraryConfig] = Field(default_factory=dict)
+    source_templates: dict[str, SourceTemplate] = Field(default_factory=dict)
+    source_defaults: dict[Literal["manga", "webtoon", "ebook"], List[ProviderConfig]] = Field(default_factory=dict)
+    google_books_api_key: str = Field(default="", repr=False)
+    # Runtime scope retained after resolving a library's overrides.
+    content_type: Literal["manga", "webtoon", "ebook"] = Field(default="manga", exclude=True)
+    ebook_matches: dict[str, EbookMatch] = Field(default_factory=dict, exclude=True)
     providers: List[ProviderConfig] = Field(default_factory=default_providers)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     translation: Optional[TranslationConfig] = None
 
+    @field_validator("source_defaults")
+    @classmethod
+    def validate_source_defaults(cls, defaults):
+        for content_type, providers in defaults.items():
+            SourceTemplate(name=content_type, content_type=content_type, providers=providers)
+        return defaults
+
+    @field_validator("source_templates")
+    @classmethod
+    def validate_source_templates(cls, templates):
+        if set(templates) & set(builtin_templates()):
+            raise ValueError("Built-in templates cannot be overwritten")
+        names = [template.name.casefold() for template in templates.values()]
+        if len(names) != len(set(names)):
+            raise ValueError("Personal template names must be unique")
+        return templates
+
     @field_validator('providers')
     @classmethod
     def validate_providers(cls, providers: List[ProviderConfig]) -> List[ProviderConfig]:
-        """Require all supported providers with unique priorities."""
+        """Accept any explicit source set, including an empty manual-only set."""
         names = [provider.name for provider in providers]
         priorities = [provider.priority for provider in providers]
-        expected = set(SUPPORTED_METADATA_PROVIDERS)
-
         if len(names) != len(set(names)):
             raise ValueError('providers must not contain duplicate names')
-        if set(names) != expected:
-            missing = sorted(expected - set(names))
-            unknown = sorted(set(names) - expected)
-            details = []
-            if missing:
-                details.append(f"missing: {', '.join(missing)}")
-            if unknown:
-                details.append(f"unknown: {', '.join(unknown)}")
-            raise ValueError(f"providers must contain all supported providers ({'; '.join(details)})")
         if len(priorities) != len(set(priorities)):
             raise ValueError('providers must have unique priorities')
 
@@ -337,17 +383,24 @@ def config_for_library(config: AppConfig, library_id: str) -> AppConfig:
         resolved.processing.exclude_series = list(
             dict.fromkeys([*resolved.processing.exclude_series, *profile.exclude_series])
         )
-        if profile.providers is not None:
-            resolved.providers = list(profile.providers)
-            names = {source.name for source in resolved.providers}
-            next_priority = max((source.priority for source in resolved.providers), default=0) + 1
-            for name in SUPPORTED_METADATA_PROVIDERS:
-                if name not in names:
-                    resolved.providers.append(ProviderConfig(name=name, enabled=False, priority=next_priority))
-                    next_priority += 1
+        resolved.content_type = profile.content_type
+        resolved.ebook_matches = dict(profile.ebook_matches)
         if profile.translation_enabled is not None:
             resolved.translation = resolved.translation or TranslationConfig(enabled=False)
             resolved.translation.enabled = profile.translation_enabled
         if profile.target_language and resolved.translation:
             resolved.translation.target_language = profile.target_language
+    selected = profile.providers if profile and profile.providers is not None else sources_for_type(config, resolved.content_type)
+    # Retain incompatible saved choices in storage, but never query them.
+    resolved.providers = [source.model_copy(deep=True) for source in selected
+                          if source.name in compatible_sources(resolved.content_type)]
     return resolved
+
+
+def sources_for_type(config: AppConfig, content_type: str) -> List[ProviderConfig]:
+    """Resolve defaults without applying manga assumptions to ebooks."""
+    if content_type in config.source_defaults:
+        return config.source_defaults[content_type]
+    if content_type != "ebook":
+        return [source for source in config.providers if source.name in compatible_sources(content_type)]
+    return [ProviderConfig.model_validate(source) for source in builtin_templates()["ebooks-general"]["providers"]]

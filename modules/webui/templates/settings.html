@@ -2,10 +2,11 @@
 {% from 'macros/ui.html' import icon, alert, field, checkbox, switch, save_bar with context %}
 {% block title %}{{ t('nav.settings') }} — Komga Meta Manager{% endblock %}
 {% block heading %}{{ t('nav.settings') }}{% endblock %}
+{% block head %}<script src="/static/source-templates.js" defer></script>{% endblock %}
 {% block content %}
 <div class="settings-page">
   <nav class="log-tabs" aria-label="{{ t('nav.settings') }}">
-    {% for key, glyph in [('connection', 'komga'), ('defaults', 'processing'), ('automation', 'system'), ('translation', 'translation')] %}
+    {% for key, glyph in [('connection', 'komga'), ('defaults', 'processing'), ('automation', 'system'), ('services', 'providers')] %}
       {% if key == 'connection' or configured %}
         <a class="log-tab{% if tab == key %} selected{% endif %}" href="/settings?tab={{ key }}"{% if tab == key %} aria-current="page"{% endif %}>{{ icon(glyph) }}{{ t('settings.' ~ key) }}</a>
       {% endif %}
@@ -81,16 +82,31 @@
       {{ save_bar() }}
     </form>
 
-  {% elif tab == 'translation' %}
-    {% set tr = cfg.get('translation') or {} %}
-    <form method="post" action="/settings/translation" class="settings-form" data-dirty-form>
-      <section class="panel">
+  {% elif tab == 'services' %}
+    <p class="page-intro">{{ t('services.intro') }}</p>
+    <form method="post" action="/settings/services" class="settings-form" data-dirty-form>
+      <input type="hidden" name="section" value="all">
+      <section class="panel" id="google-books">
+        <div class="section-heading"><h2>{{ t('services.googlebooks') }}</h2><span class="badge badge-neutral">{{ t('services.configured') if saved_service_keys.googlebooks else t('services.key_needed') }}</span></div>
+        <p class="help">{{ t('services.googlebooks_help') }}</p>
+        <div class="field">
+          <label for="google-books-key">{{ t('sources.google_key') }}</label>
+          <div class="input-action">
+            <input id="google-books-key" type="password" name="google_books_api_key" value="{{ submitted_keys.get('google_books_api_key', '') }}" autocomplete="new-password" spellcheck="false" placeholder="{{ t('sources.key_saved') if saved_service_keys.googlebooks else '' }}" aria-describedby="google-books-key-help">
+            <button type="button" class="button button-secondary" data-secret="google-books-key" aria-controls="google-books-key" aria-pressed="false">{{ t('common.show') }}</button>
+          </div>
+          <p class="help" id="google-books-key-help">{{ t('sources.key_help') }}</p>
+        </div>
+        <label class="check-row"><input type="checkbox" name="remove_google_books_key" value="1"{% if submitted_keys.get('remove_google_books_key') %} checked{% endif %}><span>{{ t('sources.remove_key') }}</span></label>
+      </section>
+      {% set tr = cfg.get('translation') or {} %}
+      <section class="panel" id="translation-service">
         <h2>{{ t('translation.title') }}</h2>
         {{ switch('enabled', t('translation.enabled'), tr.get('enabled', False), t('translation.enabled_help')) }}
         <div class="form-grid">
           <div class="field">
             <label for="tr-provider">{{ t("config.translation.provider") }}</label>
-            <select name="provider" id="tr-provider" data-reveal-select="deepl-section" data-reveal-value="deepl">
+            <select name="provider" id="tr-provider">
               <option value="google"{% if tr.get('provider', 'google') == 'google' %} selected{% endif %}>{{ t("config.translation.google") }}</option>
               <option value="deepl"{% if tr.get('provider') == 'deepl' %} selected{% endif %}>DeepL</option>
             </select>
@@ -102,18 +118,24 @@
             </select>
           </div>
         </div>
-        <div id="deepl-section"{% if tr.get('provider', 'google') != 'deepl' %} hidden{% endif %}>
+        <div id="deepl-section" class="source-credentials">
+          <div class="section-heading"><h3>{{ t('services.deepl') }}</h3><span class="badge badge-neutral">{{ t('services.configured') if saved_service_keys.deepl else t('services.optional_key') }}</span></div>
           <div class="field">
             <label for="deepl_api_key">{{ t("config.translation.deepl_key") }}</label>
             <div class="input-action">
-              <input type="password" id="deepl_api_key" name="deepl_api_key" value="{{ (tr.get('deepl') or {}).get('api_key', '') }}" autocomplete="off" spellcheck="false">
+              <input type="password" id="deepl_api_key" name="deepl_api_key" value="{{ submitted_keys.get('deepl_api_key', '') }}" autocomplete="new-password" spellcheck="false" placeholder="{{ t('sources.key_saved') if saved_service_keys.deepl else '' }}" aria-describedby="deepl-key-help">
               <button type="button" class="button button-secondary" data-secret="deepl_api_key" aria-controls="deepl_api_key" aria-pressed="false">{{ t("common.show") }}</button>
             </div>
           </div>
         </div>
+        <p class="help" id="deepl-key-help">{{ t('services.deepl_help') }}</p>
+        <label class="check-row"><input type="checkbox" name="remove_deepl_key" value="1"{% if submitted_keys.get('remove_deepl_key') %} checked{% endif %}><span>{{ t('services.remove_deepl') }}</span></label>
+        <input type="hidden" name="translation_options_present" value="1">
+        {{ switch('google_fallback', t('services.google_fallback'), tr.get('google_fallback', True), t('services.google_fallback_help')) }}
+        <p class="help">{{ t('services.google_translation_help') }}</p>
         <p class="help">{{ t('translation.libraries_help') }}</p>
       </section>
-      {{ save_bar() }}
+      {{ save_bar(t('services.save_help')) }}
     </form>
   {% endif %}
 </div>

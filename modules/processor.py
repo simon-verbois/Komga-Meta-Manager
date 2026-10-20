@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Dict
 from dataclasses import dataclass
 
-from modules.config import AppConfig, config_for_library
+from modules.config import AppConfig, LibraryConfig, config_for_library
 from modules.book_titles import book_title
 from modules.komga_client import KomgaClient
 from modules.providers import ConfiguredProvider, ProviderChain, get_providers
@@ -470,6 +470,7 @@ def process_libraries(
     progress_callback: Optional[Callable[[ProcessingResult], None]] = None,
     book_ids: Optional[list[str]] = None,
     client_factory=None,
+    _resolved: bool = False,
 ) -> ProcessingResult:
     """
     Main processing function that iterates through libraries and series.
@@ -483,7 +484,7 @@ def process_libraries(
         logger.info("No libraries enabled. Nothing to process.")
         return result
 
-    if config.library_settings:
+    if not _resolved and (config.library_settings or config.source_defaults or any("ebook" in name.casefold().replace(" ", "").replace("-", "") for name in config.komga.libraries)):
         client = make_client(config.komga)
         try:
             libraries = client.get_libraries()
@@ -496,7 +497,11 @@ def process_libraries(
         for library in selected:
             if stop_event and stop_event.is_set():
                 break
-            effective = config_for_library(config, library.id)
+            library_config = config
+            if library.id not in config.library_settings and "ebook" in library.name.casefold().replace(" ", "").replace("-", ""):
+                library_config = config.model_copy(deep=True)
+                library_config.library_settings[library.id] = LibraryConfig(name=library.name, content_type="ebook")
+            effective = config_for_library(library_config, library.id)
             effective.komga.libraries = [library.name]
             def report_partial(partial):
                 if progress_callback:
@@ -505,7 +510,7 @@ def process_libraries(
                         failed=result.failed + partial.failed,
                         skipped=result.skipped + partial.skipped,
                     ))
-            partial = process_libraries(effective, stop_event, series_ids, report_partial, book_ids, client_factory)
+            partial = process_libraries(effective, stop_event, series_ids, report_partial, book_ids, client_factory, _resolved=True)
             result.processed += partial.processed
             result.failed += partial.failed
             result.skipped += partial.skipped
@@ -518,12 +523,9 @@ def process_libraries(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     komga_client = make_client(config.komga)
-    metadata_provider = get_providers(config.providers, cache_dir)
-    if metadata_provider is None or (
-        isinstance(metadata_provider, ProviderChain)
-        and not metadata_provider.entries
-        and config.processing.book_titles.mode == "off"
-    ):
+    metadata_provider = (get_providers(config.providers, cache_dir, config.google_books_api_key)
+                         if config.google_books_api_key else get_providers(config.providers, cache_dir))
+    if metadata_provider is None:
         logger.error("Failed to initialize metadata providers. Aborting.")
         result.success = False
         return result
@@ -535,6 +537,7 @@ def process_libraries(
         if translator_provider == 'deepl':
             if config.translation.deepl:
                 translator_kwargs['config'] = config.translation.deepl
+                translator_kwargs['fallback_to_google'] = config.translation.google_fallback
             else:
                 logger.error("DeepL provider is selected but its configuration is missing.")
                 result.success = False
@@ -577,6 +580,9 @@ def process_libraries(
             continue
 
         for series in series_list:
+            if series.library_id != lib_id:
+                logger.warning("Skipping series outside the selected library: %s", series.id)
+                continue
             if selected_ids is not None and series.id not in selected_ids:
                 continue
             if stop_event and stop_event.is_set():
@@ -592,7 +598,10 @@ def process_libraries(
             try:
                 if client_factory:
                     komga_client.get_books_in_series(series.id, series.name)
-                if book_ids is None:
+                if config.content_type == "ebook":
+                    from modules.ebook_metadata import process_ebook_series
+                    process_ebook_series(series, config, komga_client, metadata_provider, translator, book_ids, stop_event)
+                elif book_ids is None:
                     process_single_series(series, config, komga_client, metadata_provider, translator)
                 else:
                     process_single_series(series, config, komga_client, metadata_provider, translator, book_ids=book_ids)

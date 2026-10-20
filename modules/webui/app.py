@@ -103,6 +103,8 @@ def create_app(
     app.include_router(config_routes.setup_routes(templates))
     app.include_router(logs.setup_routes(templates))
     app.include_router(libraries.setup_routes(templates))
+    from modules.webui.routes import ebook_matches
+    app.include_router(ebook_matches.setup_routes(templates))
     app.include_router(manual_metadata.setup_routes())
     app.include_router(review.setup_routes(templates))
 

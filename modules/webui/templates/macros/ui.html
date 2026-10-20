@@ -9,6 +9,9 @@
        aria-hidden="true">
     {% if name == "books" %}
       <path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l4-1 4 15-4 1z" />
+    {% elif name == "search" %}
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 5 5" />
     {% elif name == "chevron-down" %}
       <path d="m6 9 6 6 6-6" />
     {% elif name == "chevron-up" %}
@@ -74,6 +77,10 @@
       <path d="m6 15 6-6 6 6" />
     {% elif name == "close" %}
       <path d="M6 6l12 12M18 6 6 18" />
+    {% elif name == "edit" %}
+      <path d="m16 3 5 5-12 12-6 1 1-6zM14 5l5 5" />
+    {% elif name == "trash" %}
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
     {% elif name == "skip" %}
       <circle cx="12" cy="12" r="9" />
       <path d="m6 6 12 12" />
@@ -179,6 +186,6 @@
     <span class="switch-text"><span class="check-title">{{ label }}</span>{% if help %}<span class="help" id="{{ name }}-help">{{ help }}</span>{% endif %}</span>
   </label>
 {%- endmacro %}
-{% macro alert(kind, message) -%}
-  <div class="alert alert-{{ kind }}" role="{{ 'alert' if kind == 'error' else 'status' }}"{% if kind == 'error' %} tabindex="-1" data-form-error{% endif %}>{{ icon('check' if kind == 'success' else 'info') }}<div>{{ message }}</div></div>
+{% macro alert(kind, message, persistent=false) -%}
+  <div class="alert alert-{{ kind }}"{% if not persistent %} data-toast="{{ kind }}" hidden{% else %} role="{{ 'alert' if kind == 'error' else 'status' }}"{% if kind == 'error' %} tabindex="-1" data-form-error{% endif %}{% endif %}>{{ icon('check' if kind == 'success' else 'info') }}<div>{{ message }}</div></div>
 {%- endmacro %}

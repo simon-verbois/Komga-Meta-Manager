@@ -1,44 +1,86 @@
 {% from 'macros/ui.html' import icon with context %}
 {# Shared by Settings → Defaults and each library. Expects `sources` in priority order. #}
+{% if source_templates is defined %}
+<div class="source-template-controls">
+  <div class="field">
+    <label for="source-template">{{ t('sources.template') }}</label>
+    <select id="source-template" name="source_template" data-source-template>
+      <option value="">{{ t('sources.template_choose') }}</option>
+      {% for key, template in source_templates.items() %}<option value="{{ key }}" data-personal="{{ 'true' if key in personal_template_ids else 'false' }}">{{ template.name }}{{ ' — ' ~ t('sources.personal') if key in personal_template_ids else '' }}</option>{% endfor %}
+    </select>
+  </div>
+  <button type="button" class="button button-secondary" data-apply-template disabled>{{ t('sources.apply_template') }}</button>
+  <button type="submit" name="source_action" value="template_delete" class="button button-quiet" data-delete-template disabled hidden formnovalidate>{{ t('sources.delete_template') }}</button>
+</div>
+<p class="help">{{ t('sources.template_help') }}</p>
+<script type="application/json" data-source-template-data>{{ source_templates | tojson }}</script>
+{% if incompatible_sources %}<p class="alert alert-warning" role="status">{{ t('sources.incompatible') }}</p>{% endif %}
+{% endif %}
 <p class="help section-description">{{ t('sources.help') }}</p>
 <ol class="source-list" data-source-list aria-label="{{ t('sources.order') }}">
-  {% for source in sources %}
+  {% for source in sources + (available_sources | default([])) %}
+    {% set selected = loop.index0 < sources | length %}
     {% set name = source.name %}
-    <li class="source-row" data-source="{{ name }}">
-      <input type="hidden" name="source_order" value="{{ name }}">
+    <li class="source-row" data-source="{{ name }}" data-source-selected="{{ 'true' if selected else 'false' }}"{% if not selected %} hidden{% endif %}>
+      <input type="hidden" name="source_order" value="{{ name }}"{% if not selected %} disabled{% endif %}>
       <span class="source-rank" aria-hidden="true">{{ loop.index }}</span>
       <label class="switch-row source-toggle" for="{{ name }}_enabled">
-        <input type="checkbox" role="switch" id="{{ name }}_enabled" name="{{ name }}_enabled" value="1"{% if source.get('enabled', true) %} checked{% endif %}>
+        <input type="checkbox" role="switch" id="{{ name }}_enabled" name="{{ name }}_enabled" value="1"{% if not selected %} disabled{% endif %}{% if source.get('enabled', true) %} checked{% endif %}>
         <span class="switch-track" aria-hidden="true"></span>
         <span class="check-title">{{ source.display }}</span>
       </label>
       <span class="source-move">
+        {% if source_templates is defined %}<button type="button" class="button button-icon button-quiet" data-remove-source aria-label="{{ t('sources.remove', name=source.display) }}">{{ icon('trash') }}</button>{% endif %}
         <button type="button" class="button button-icon button-quiet" data-move="up" aria-label="{{ t('sources.up', name=source.display) }}">{{ icon('chevron-up') }}</button>
         <button type="button" class="button button-icon button-quiet" data-move="down" aria-label="{{ t('sources.down', name=source.display) }}">{{ icon('chevron-down') }}</button>
       </span>
+      {% if name == 'googlebooks' and not google_books_ready | default(false) %}<p class="help source-key-hint">{{ t('sources.key_required') }} <a class="text-link" href="/settings?tab=services#google-books">{{ t('sources.configure_key') }}</a></p>{% endif %}
+      {% if source_capabilities is defined %}<p class="help source-capabilities">{{ t('sources.fields') }} {% for key in source_capabilities[name].fields %}{{ t('sources.field.' ~ key) }}{{ ', ' if not loop.last else '' }}{% endfor %}</p>{% endif %}
       <details class="disclosure source-advanced">
         <summary>{{ t('ui.advanced') }}</summary>
         <div class="form-grid">
           <div class="field">
             <label for="{{ name }}_min_score">{{ t('sources.min_score') }}</label>
-            <input type="number" id="{{ name }}_min_score" name="{{ name }}_min_score" value="{{ source.get('min_score', 80) }}" min="0" max="100" aria-describedby="{{ name }}_min_score-help">
+            <input type="number"{% if not selected %} disabled{% endif %} id="{{ name }}_min_score" name="{{ name }}_min_score" value="{{ source.get('min_score', 80) }}" min="0" max="100" aria-describedby="{{ name }}_min_score-help">
             <p class="help" id="{{ name }}_min_score-help">{{ t('sources.min_score_help') }}</p>
           </div>
           <div class="field">
             <label for="{{ name }}_preferred_language">{{ t('sources.language') }}</label>
-            <select id="{{ name }}_preferred_language" name="{{ name }}_preferred_language">
+            <select{% if not selected %} disabled{% endif %} id="{{ name }}_preferred_language" name="{{ name }}_preferred_language">
               {% set current = language_value(source.get('preferred_language', 'en'), source_languages) %}
               {% for code, label in language_options(source.get('preferred_language', 'en'), source_languages) %}<option value="{{ code }}"{% if code == current %} selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
           </div>
           <div class="field">
             <label for="{{ name }}_cache_ttl">{{ t('sources.cache') }}</label>
-            <input type="number" id="{{ name }}_cache_ttl" name="{{ name }}_cache_ttl" value="{{ (source.get('cache') or {}).get('ttl_hours', 168) }}" min="1" aria-describedby="{{ name }}_cache_ttl-help">
+            <input type="number"{% if not selected %} disabled{% endif %} id="{{ name }}_cache_ttl" name="{{ name }}_cache_ttl" value="{{ (source.get('cache') or {}).get('ttl_hours', 168) }}" min="1" aria-describedby="{{ name }}_cache_ttl-help">
             <p class="help" id="{{ name }}_cache_ttl-help">{{ t('sources.cache_help') }}</p>
           </div>
         </div>
-        <label class="check-row" for="{{ name }}_allow_adult"><input type="checkbox" id="{{ name }}_allow_adult" name="{{ name }}_allow_adult" value="1"{% if source.get('allow_adult') %} checked{% endif %}><span class="check-title">{{ t('sources.adult') }}</span></label>
+        {% if content_type | default('manga') != 'ebook' or name == 'googlebooks' %}<label class="check-row" for="{{ name }}_allow_adult"><input type="checkbox" id="{{ name }}_allow_adult" name="{{ name }}_allow_adult" value="1"{% if not selected %} disabled{% endif %}{% if source.get('allow_adult') %} checked{% endif %}><span class="check-title">{{ t('sources.adult') }}</span></label>{% endif %}
       </details>
     </li>
   {% endfor %}
 </ol>
+{% if source_templates is defined %}
+<p class="help" data-source-empty{% if sources %} hidden{% endif %}>{{ t('sources.empty') }}</p>
+<div class="source-template-controls">
+  <div class="field"><label for="add-source">{{ t('sources.add') }}</label><select id="add-source" data-add-source>
+    <option value="">{{ t('sources.add_choose') }}</option>
+    {% for source in sources + available_sources %}<option value="{{ source.name }}"{% if source in sources %} disabled{% endif %}>{{ source.display }}</option>{% endfor %}
+  </select></div>
+  <button type="button" class="button button-secondary" data-add-source-button disabled>{{ t('sources.add') }}</button>
+</div>
+<p class="help" role="status" aria-live="polite" data-source-status data-applied="{{ t('sources.applied') }}"></p>
+<details class="disclosure">
+  <summary>{{ t('sources.reuse') }}</summary>
+  <div class="source-template-controls">
+    <div class="field"><label for="template-name">{{ t('sources.template_name') }}</label><input id="template-name" name="template_name" maxlength="80" value="{{ template_name | default('') }}"></div>
+    <button type="submit" class="button button-secondary" name="source_action" value="template_save">{{ t('sources.save_template') }}</button>
+    <button type="submit" class="button button-secondary" name="source_action" value="template_update" data-update-template disabled hidden>{{ t('sources.update_template') }}</button>
+  </div>
+  <p class="help">{{ t('sources.reuse_help') }}</p>
+  <button type="submit" class="button button-secondary" name="source_action" value="type_default">{{ t('sources.type_default', type=t('libraries.type.' ~ content_type)) }}</button>
+  <p class="help">{{ t('sources.type_default_help') }}</p>
+</details>
+{% endif %}

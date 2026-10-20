@@ -84,6 +84,7 @@ processing:
 
 translation:
   enabled: true          # Enable metadata translation
+  google_fallback: true # Use Google Translate when DeepL fails or its quota is exhausted
   provider: "deepl"     # Translation service: 'google' or 'deepl'
   deepl:
     api_key: "YOUR_DEEPL_API_KEY" # Required if provider is 'deepl'

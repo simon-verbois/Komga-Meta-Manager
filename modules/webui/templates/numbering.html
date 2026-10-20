@@ -8,7 +8,7 @@
     <h2>{{ series.metadata.title }}</h2>
     <p>{{ t('numbering.help') }}</p>
     <p class="help">{{ t('numbering.naming_on') if naming_active else t('numbering.naming_off') }}</p>
-    {% if error %}{{ alert('error', t(error)) }}{% endif %}
+    {% if error %}{{ alert('error', t(error), persistent=true) }}{% endif %}
     {% if rows %}
       <form method="post" data-numbering-form data-dirty-form>
         <input type="hidden" name="version" value="{{ version }}">

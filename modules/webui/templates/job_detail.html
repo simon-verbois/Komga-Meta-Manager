@@ -3,10 +3,11 @@
 {% block title %}{{ t('jobs.title', id=job.id) }} — Komga Meta Manager{% endblock %}
 {% block back %}<a class="back-link" href="/logs">{{ icon('chevron-left') }}{{ t('nav.activity') }}</a>{% endblock %}
 {% block heading %}{{ job_title(job) }} <span class="heading-id">#{{ job.id }}</span>{% endblock %}
+{% block head %}<script src="/static/job-logs.js" defer></script>{% endblock %}
 {% block content %}
 {% set running = job.status in ['queued', 'running', 'stopping'] %}
 {% if message %}{{ alert('error', t(message)) }}{% endif %}
-<section class="panel job-outcome"{% if running %} hx-get="{{ request.url.path }}" hx-trigger="every 3s" hx-select="#main-content > *" hx-target="#main-content" hx-swap="innerHTML"{% endif %}>
+<section id="job-outcome" class="panel job-outcome"{% if running %} hx-get="{{ request.url.path }}" hx-trigger="every 3s" hx-select="#job-outcome" hx-target="this" hx-swap="outerHTML"{% endif %}>
   <div class="job-outcome-head">
     {{ job_status(job) }}
     <span class="row-meta">{{ job.libraries | join(', ') }}{% if job.series_count %} · {{ plural(job.series_count, 'job.series_one', 'job.series_many') }}{% endif %} · {{ t('queue.source.' ~ job.source) }}</span>
@@ -40,18 +41,32 @@
   </div>
 </section>
 <details class="panel disclosure log-panel"{% if job.status in ['failed', 'running', 'stopping', 'interrupted'] %} open{% endif %}>
-  <summary>{{ t('jobs.logs') }} <span class="help">({{ plural(log_count, 'job.lines_one', 'job.lines_many') }})</span></summary>
+  <summary>{{ t('jobs.logs') }} <span id="job-log-count" class="help">({{ plural(log_count, 'job.lines_one', 'job.lines_many') }})</span></summary>
   <div class="log-panel-actions">
     <p class="help">{{ t('jobs.output_note') }}</p>
     <a class="button button-secondary button-small" href="/logs/jobs/{{ job.id }}/download">{{ icon('download') }}{{ t('jobs.download') }}</a>
   </div>
-  {% if log_count %}
-    <div class="log-viewer" tabindex="0" role="region" aria-label="{{ t('jobs.logs') }}">
-      <div hx-get="/logs/jobs/{{ job.id }}/lines?page={{ total_pages }}" hx-trigger="load" hx-swap="innerHTML"><span role="status">{{ t('ui.loading') }}</span></div>
+  <div class="log-options">
+    <fieldset id="job-log-level-filters" class="log-level-filters">
+      <legend>{{ t('logs.exec.levels') }}</legend>
+      <input type="hidden" name="filtered" value="true">
+      <div class="log-filter-options">
+        {% for level in log_levels %}
+          <label class="log-level-filter" data-level="{{ level }}">
+            <input type="checkbox" name="levels" value="{{ level }}" {% if level in default_log_levels %}checked{% endif %} data-refresh-job-log>
+            <span>{{ level }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="log-controls">
+      <label class="check-row"><input type="checkbox" id="follow-job-log" checked>{{ t('ui.logs.follow') }}</label>
     </div>
-    {% if total_pages > 1 %}<p class="help">{{ t('jobs.last_page', total=total_pages) }}</p>{% endif %}
-  {% else %}
-    <p class="help">{{ t('jobs.empty_waiting') if running else t('jobs.empty') }}</p>
-  {% endif %}
+  </div>
+  <div class="log-viewer" id="job-log-container" tabindex="0" role="region" aria-label="{{ t('jobs.logs') }}">
+    <div id="job-log-lines" hx-get="/logs/jobs/{{ job.id }}/lines" hx-trigger="load, refresh" hx-swap="outerHTML" hx-sync="this:replace" hx-include="#job-log-level-filters">
+      <span role="status">{{ t('ui.loading') }}</span>
+    </div>
+  </div>
 </details>
 {% endblock %}

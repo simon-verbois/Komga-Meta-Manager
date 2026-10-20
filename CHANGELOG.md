@@ -14,7 +14,13 @@ section above it. VERSION and released headings are managed by that script, not 
 ## [Unreleased]
 
 ### Added
-
+- Fall back from DeepL to Google Translate by default, with an External services switch, separate caches, immediate handling of exhausted quota, and original-text preservation when both services fail.
+- Centralize Google Books credentials and translation/DeepL settings in External services, preserve existing keys, and rename the default metadata tab to Metadata Defaults. Keep this page focused on configurable services.
+- Show action notifications across the app as dismissible bottom-right overlays, with automatic expiry paused on hover, keyboard focus or hidden tabs; keep validation errors beside their forms.
+- Content-aware metadata source sets and defaults for manga, webtoon and ebook libraries, with built-in source templates, reusable personal templates, and guided add/remove/reorder controls.
+- Open Library, Google Books and BnF ebook sources, shared Google Books credentials, and conservative ISBN/title/author edition matching with manual edition selection and visible match outcomes per book.
+- Book-scoped ebook enrichment for summaries, writers, covers, links, optional ISBN and full publication dates, preserving sibling books, series metadata, configured locks and manual edits through Fetch → Review → Publish.
+- Remove any series (including its local books) or individual ebook from KMM with an explicit confirmation that Komga metadata, books and files remain unchanged. Discard local covers and unpublished edits, keep removed items out of the library until a future Fetch, and allow removal without a Komga connection.
 - Flag locally retained series missing from Komga after a successful fetch or an explicit Check Komga, with a matching library filter. Remove a missing series and its books from KMM after confirmation and a fresh presence check; keep local edits on connection failure and never delete Komga content or files.
 - Optionally use an uploaded or current series cover for every book in that series from the metadata editor. Show the book count, save covers locally for Review before publishing, and preserve drafts on failure.
 - Reorder books manually with keyboard-accessible Move up/Move down controls in the numbering editor. Moving a book swaps neighboring numbers, preserves other books and prepares sort-order and configured title changes in Review; validation errors keep the edited order and values.
@@ -36,6 +42,9 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ### Changed
 
+- Refresh job logs every second while active, follow the latest output without resetting controls, and filter levels with DEBUG hidden by default; keep every message in storage and full downloads.
+
+- Show compact edit and red trash buttons at the bottom right of library covers on mouse hover, with accessible labels and the existing KMM-only deletion confirmation. Keep actions available for keyboard focus and touch devices; remove cover zoom, cover click actions and the button below each card.
 - Replace per-book Edit order links in Review with a left-hand drag handle for reordering directly in the list, including touch dragging, keyboard arrows and move controls on click. Drops save manual number, sort-order and configured title changes in KMM for review before publication.
 - Make Review easier to scan with collapsible series, separate series metadata and compact book rows ordered by book number, inline title comparisons, expandable field details and full summaries on demand.
 - Give each library a dedicated Metadata sources tab between Series/Books and Settings, with independent saving, validation and reset that preserve the other library settings.
@@ -52,6 +61,9 @@ section above it. VERSION and released headings are managed by that script, not 
 - Keep the Web UI available when scheduling is disabled or watcher initialization fails.
 
 ### Fixed
+- Automatically fall back from unavailable or unmatched ebook ISBNs to scored title/author matching, honor each source's confidence threshold, leave ambiguous results for manual selection, and preserve known ISBN/date values when a different edition is matched by title.
+- Pause uncached Google Books requests for 60 seconds after server failures while continuing other enabled ebook sources, use the series language for edition matching, and distinguish source outages from missing editions in fetch logs.
+- Distinguish Google Books service outages, rejected credentials, access restrictions, quota limits and connection failures after retries; avoid language filters for exact ISBN lookups.
 
 - Detect numbering warnings in titles whose volume/chapter label is followed by parenthesized or bracketed release information, including volume-zero offsets.
 - Allow explicitly saved manual edits to update known locked Komga fields while keeping them locked; publication still blocks locked values or locks changed in Komga since the last fetch.

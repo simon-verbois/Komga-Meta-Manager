@@ -73,7 +73,8 @@
       }
       fields.forEach((field, index) => { field.value = String(start + index); });
       form.dispatchEvent(new Event('input', { bubbles: true }));
-      status.textContent = status.dataset.filled;
+      window.KMM.notify(status.dataset.filled, "success");
+      status.textContent = "";
     });
     const selectedBook = new URLSearchParams(window.location.search).get('book');
     const selectedRow = Array.from(list.querySelectorAll('[data-numbering-book]'))
@@ -157,8 +158,7 @@
       }
     });
   }
-  const feedback = document.getElementById("request-feedback");
-  body.addEventListener("htmx:beforeRequest", () => { feedback.hidden = true; });
+  const notifications = document.getElementById("notification-region");
   body.addEventListener("htmx:beforeSwap", (event) => {
     if (event.detail.xhr.status === 401 || /\/login$/.test(event.detail.xhr.responseURL)) {
       event.detail.shouldSwap = false;
@@ -166,7 +166,7 @@
     }
   });
   ["htmx:responseError", "htmx:sendError", "htmx:timeout"].forEach((name) => {
-    body.addEventListener(name, () => { feedback.hidden = false; });
+    body.addEventListener(name, () => { window.KMM.notify(notifications.dataset.requestError, "error"); });
   });
   body.addEventListener("htmx:afterSwap", (event) => {
     localizeTimes();
@@ -255,11 +255,12 @@
     if (!button) return;
     const row = button.closest(".source-row");
     const list = row.parentElement;
-    const sibling = button.dataset.move === "up" ? row.previousElementSibling : row.nextElementSibling;
+    let sibling = button.dataset.move === "up" ? row.previousElementSibling : row.nextElementSibling;
+    while (sibling?.hidden) sibling = button.dataset.move === "up" ? sibling.previousElementSibling : sibling.nextElementSibling;
     if (!sibling) return;
     if (button.dataset.move === "up") list.insertBefore(row, sibling);
     else list.insertBefore(sibling, row);
-    Array.from(list.children).forEach((item, index) => { item.querySelector(".source-rank").textContent = index + 1; });
+    Array.from(list.children).filter(item => !item.hidden).forEach((item, index) => { item.querySelector(".source-rank").textContent = index + 1; });
     button.focus();
     row.closest("form")?.dispatchEvent(new Event("kmm:reordered"));
   });
@@ -277,9 +278,9 @@
       const response = await fetch("/config/komga/libraries", { method: "POST", body: data, redirect: "error" });
       const payload = await response.json();
       if (response.ok) {
-        result.className = "help success-text";
-        result.textContent = button.dataset.ok.replace("{n}", payload.libraries.length)
-          .replace("{names}", payload.libraries.map((lib) => lib.name).join(", "));
+        result.textContent = "";
+        window.KMM.notify(button.dataset.ok.replace("{n}", payload.libraries.length)
+          .replace("{names}", payload.libraries.map((lib) => lib.name).join(", ")), "success");
       } else {
         result.className = "help error-text";
         result.textContent = response.status === 422 ? button.dataset.invalid : button.dataset.fail;

@@ -1,10 +1,13 @@
 """Translate guided form controls to configuration values and back, shared by defaults and libraries."""
 
 from modules.config import SUPPORTED_METADATA_PROVIDERS
+from modules.source_catalogue import SOURCE_CATALOGUE
 
 # (form name, config path, can be filled from sources)
 RULE_FIELDS = (
     ("summary", ("summary",), True),
+    ("isbn", ("isbn",), True),
+    ("release_date", ("release_date",), True),
     ("publisher", ("publisher",), True),
     ("genres", ("genres",), True),
     ("status", ("status",), True),
@@ -17,7 +20,7 @@ RULE_FIELDS = (
     ("reading_direction", ("reading_direction",), False),
 )
 RULE_CHOICES = ("keep", "fill", "remove")
-SOURCE_NAMES = {"anilist": "AniList", "mangadex": "MangaDex", "mangaupdates": "MangaUpdates"}
+SOURCE_NAMES = {name: source["display"] for name, source in SOURCE_CATALOGUE.items()}
 
 # Codes are normalized per translation service by the configuration model.
 LANGUAGES = (
@@ -91,19 +94,18 @@ def processing_patch(form, existing: dict | None = None) -> dict:
 
 def ordered_sources(providers: list[dict]) -> list[dict]:
     """List every supported source in priority order, with display names."""
-    known = {source["name"]: source for source in providers}
-    rows = sorted(
-        (known.get(name, {"name": name, "enabled": False, "priority": 99}) for name in SUPPORTED_METADATA_PROVIDERS),
-        key=lambda source: source.get("priority", 99),
-    )
-    return [{**source, "display": SOURCE_NAMES[source["name"]]} for source in rows]
+    rows = sorted(providers, key=lambda source: int(source.get("priority", 99)))
+    return [{**source, "display": SOURCE_NAMES[source["name"]]} for source in rows if source["name"] in SOURCE_NAMES]
 
 
-def sources_patch(form, existing: list[dict]) -> list[dict]:
+def sources_patch(form, existing: list[dict], allowed=None) -> list[dict]:
     """Read source order and options; priority follows the order chosen in the form."""
     known = {source["name"]: source for source in existing}
-    order = [name for name in form.getlist("source_order") if name in SUPPORTED_METADATA_PROVIDERS]
-    order = list(dict.fromkeys(order + [s["name"] for s in ordered_sources(existing)]))
+    allowed = set(SUPPORTED_METADATA_PROVIDERS if allowed is None else allowed)
+    submitted = form.getlist("source_order")
+    if any(name not in allowed for name in submitted) or len(submitted) != len(set(submitted)):
+        raise ValueError("Sources must be compatible and unique")
+    order = submitted
     sources = []
     for priority, name in enumerate(order, start=1):
         source = dict(known.get(name, {"name": name}))

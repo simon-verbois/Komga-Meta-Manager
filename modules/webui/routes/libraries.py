@@ -1,13 +1,15 @@
 """Library browsing, per-library settings inheriting the defaults, and targeted fetches."""
 
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from modules.config import BookTitleConfig, LibraryConfig, ProcessingConfig, ProviderConfig, config_for_library
+from modules.config import SourceTemplate, BookTitleConfig, LibraryConfig, ProcessingConfig, ProviderConfig, config_for_library
+from modules.source_catalogue import SOURCE_CATALOGUE, builtin_templates, compatible_sources
 from modules.local_metadata import LocalCatalogue, LocalKomgaClient, local_edit_lock
 from modules.komga_client import KomgaClient
 from modules.webui.config_store import get_config, save_config_to_db
@@ -88,7 +90,10 @@ def setup_routes(templates) -> APIRouter:
             "catalogue_notice": request.query_params.get("catalogue_notice"),
         }
         if selected:
-            effective = config_for_library(cfg, selected.id).model_dump(mode="json")
+            scoped = cfg.model_copy(deep=True)
+            if selected.id not in scoped.library_settings:
+                scoped.library_settings[selected.id] = LibraryConfig(name=selected.name, content_type=library_type(cfg, selected))
+            effective = config_for_library(scoped, selected.id).model_dump(mode="json")
             profile = cfg.library_settings.get(selected.id)
             defaults = cfg.model_dump(mode="json")
             translation = defaults.get("translation") or {}
@@ -101,6 +106,18 @@ def setup_routes(templates) -> APIRouter:
                     "processing": effective["processing"],
                     "rules_inherited": not profile or profile.processing is None,
                     "sources": ordered_sources(effective["providers"]),
+                    "available_sources": ordered_sources([
+                        {"name": name, "enabled": False} for name in compatible_sources(library_type(cfg, selected))
+                        if name not in {source["name"] for source in effective["providers"]}
+                    ]),
+                    "source_templates": {key: value for key, value in {
+                        **builtin_templates(), **{key: value.model_dump(mode="json") for key, value in cfg.source_templates.items()}
+                    }.items() if value["content_type"] == library_type(cfg, selected)},
+                    "personal_template_ids": list(cfg.source_templates),
+                    "source_capabilities": SOURCE_CATALOGUE,
+                    "google_books_ready": bool(cfg.google_books_api_key),
+                    "incompatible_sources": bool(profile and profile.providers is not None and any(
+                        source.name not in compatible_sources(library_type(cfg, selected)) for source in profile.providers)),
                     "sources_inherited": not profile or profile.providers is None,
                     "source_languages": SOURCE_LANGUAGES,
                     "translation_mode": (
@@ -165,14 +182,47 @@ def setup_routes(templates) -> APIRouter:
         elif reset == "sources":
             profile["providers"] = None
         elif tab == "sources":
-            sources = sources_patch(form, profile.get("providers") or raw["providers"])
-            submitted = {"sources": ordered_sources(sources)}
             try:
-                same_sources = _sources(sources) == _sources(raw["providers"])
+                sources = sources_patch(form, config_for_library(
+                    type(cfg).model_validate({**raw, "library_settings": {**raw["library_settings"], library_id: profile}}), library_id
+                ).model_dump(mode="json")["providers"], compatible_sources(profile["content_type"]))
+            except ValueError:
+                return await render(request, username, library_id, tab, error="libraries.validation_error")
+            submitted = {"sources": ordered_sources(sources), "available_sources": ordered_sources([
+                {"name": name, "enabled": False} for name in compatible_sources(profile["content_type"])
+                if name not in {source["name"] for source in sources}
+            ]), "template_name": form.get("template_name", "")}
+            action = form.get("source_action")
+            try:
+                if action == "template_save":
+                    template = SourceTemplate(name=form.get("template_name", ""), content_type=profile["content_type"], providers=sources)
+                    if any(item["name"].casefold() == template.name.casefold() for item in raw["source_templates"].values()):
+                        return await render(request, username, library_id, tab, error="sources.duplicate_template", submitted=submitted)
+                    raw["source_templates"]["custom-" + uuid4().hex] = template.model_dump(mode="json")
+                elif action == "template_update":
+                    key = form.get("source_template", "")
+                    if key not in raw["source_templates"] or raw["source_templates"][key]["content_type"] != profile["content_type"]:
+                        raise ValueError("Select a personal template for this library type")
+                    name = form.get("template_name", "").strip() or raw["source_templates"][key]["name"]
+                    raw["source_templates"][key] = SourceTemplate(name=name, content_type=profile["content_type"], providers=sources).model_dump(mode="json")
+                elif action == "template_delete":
+                    key = form.get("source_template", "")
+                    if key not in raw["source_templates"]:
+                        raise ValueError("Only personal templates can be deleted")
+                    del raw["source_templates"][key]
+                    save_config_to_db(raw)
+                    add_audit_entry("SOURCE_TEMPLATE_DELETE", f"Personal source template deleted by {username}; existing libraries preserved.")
+                    return await render(request, username, library_id, tab, success="sources.template_deleted", submitted=submitted)
+                elif action == "type_default":
+                    raw["source_defaults"][profile["content_type"]] = sources
+            except (ValueError, ValidationError):
+                return await render(request, username, library_id, tab, error="sources.template_invalid", submitted=submitted)
+            try:
+                _sources(sources)
             except (ValueError, ValidationError):
                 return await render(request, username, library_id, tab, error="libraries.validation_error",
                                     submitted=submitted)
-            profile["providers"] = None if profile.get("providers") is None and same_sources else sources
+            profile["providers"] = sources
         else:
             if "enabled" in form and library.name not in raw["komga"]["libraries"]:
                 raw["komga"]["libraries"].append(library.name)
@@ -183,7 +233,7 @@ def setup_routes(templates) -> APIRouter:
             current = (profile.get("processing") or raw["processing"])
             rules = processing_patch(form, current)
             # Sources have their own form; saving Settings leaves their choices untouched.
-            sources = profile.get("providers") or raw["providers"]
+            sources = profile["providers"] if profile.get("providers") is not None else raw["providers"]
             mode = form.get("translation_mode", "default")
             language = form.get("target_language", "").strip()
             # Shown again on a validation error so the user's entries are kept.
@@ -203,13 +253,12 @@ def setup_routes(templates) -> APIRouter:
                                     submitted=submitted)
             try:
                 same_rules = _rules(rules) == _rules(raw["processing"])
-                same_sources = _sources(sources) == _sources(raw["providers"])
+                _sources(sources)
             except (ValueError, ValidationError):
                 return await render(request, username, library_id, "settings", error="libraries.validation_error",
                                     submitted=submitted)
             # Settings identical to the defaults keep following future default changes.
             profile["processing"] = None if profile.get("processing") is None and same_rules else rules
-            profile["providers"] = None if profile.get("providers") is None and same_sources else sources
             profile["translation_enabled"] = {"on": True, "off": False}.get(mode)
             profile["target_language"] = language if mode == "on" and language else None
         try:
@@ -303,6 +352,34 @@ def setup_routes(templates) -> APIRouter:
         add_audit_entry("LIBRARY_SAVE", f"{library.name}: {'skipping' if skip else 'no longer skipping'} {name} ({username}).")
         return {"skipped": skip}
 
+    @router.post("/{library_id}/{entity}/{item_id}/remove")
+    async def remove_local(request: Request, library_id: str, entity: Literal["series", "books"], item_id: str):
+        username = get_current_user(request)
+        if not username:
+            return RedirectResponse("/login", status_code=302)
+        cfg = get_config()
+        if not cfg:
+            return Response(status_code=404)
+
+        def remove():
+            with local_edit_lock():
+                removed = catalogue_for(cfg).remove_item(library_id, entity, item_id)
+                if removed:
+                    add_audit_entry(
+                        "catalogue_remove",
+                        f"Removed local {entity} {item_id} from library {library_id} by {username}; Komga unchanged.",
+                    )
+                return removed
+
+        target = f"/libraries?library={library_id}"
+        try:
+            removed = await run_in_threadpool(remove)
+        except Exception:
+            return back(target, message="libraries.remove_error")
+        if not removed:
+            return back(target, message="libraries.remove_item_unavailable")
+        return back(target, catalogue_notice="libraries.item_removed")
+
     @router.post("/{library_id}/check")
     @router.post("/{library_id}/remove-missing")
     async def check_catalogue(request: Request, library_id: str):
@@ -382,6 +459,9 @@ def setup_routes(templates) -> APIRouter:
                 )
                 row["title"] = meta.title or item.name
                 row["absent"] = row["series"].id in missing
+                if is_ebook:
+                    from modules.ebook_metadata import match_status
+                    row["match_status"] = match_status(str(cfg.komga.url), item.id)
             rows.sort(key=lambda row: row["title"].casefold())
             return library, rows, is_ebook
 

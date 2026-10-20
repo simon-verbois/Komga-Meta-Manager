@@ -19,6 +19,8 @@ def test_remove_defaults_are_all_disabled() -> None:
     config = AppConfig.model_validate(minimal_config())
     assert config.processing.remove_fields.model_dump() == {
         "summary": False,
+        "isbn": False,
+        "release_date": False,
         "publisher": False,
         "language": False,
         "reading_direction": False,
@@ -133,7 +135,7 @@ def test_unknown_metadata_provider_is_rejected() -> None:
         AppConfig.model_validate(data)
 
 
-def test_all_providers_are_required_and_sorted_by_priority() -> None:
+def test_source_subsets_are_accepted_and_sorted_by_priority() -> None:
     data = minimal_config()
     data["providers"] = [
         {"name": "mangaupdates", "priority": 30},
@@ -144,5 +146,6 @@ def test_all_providers_are_required_and_sorted_by_priority() -> None:
     assert [provider.name for provider in config.providers] == ["anilist", "mangadex", "mangaupdates"]
 
     data["providers"].pop()
-    with pytest.raises(ValidationError):
-        AppConfig.model_validate(data)
+    assert len(AppConfig.model_validate(data).providers) == 2
+    data["providers"] = []
+    assert AppConfig.model_validate(data).providers == []

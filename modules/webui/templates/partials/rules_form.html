@@ -4,7 +4,8 @@
   <div class="rule-row rule-head" aria-hidden="true">
     <span>{{ t('rules.col.field') }}</span><span>{{ t('rules.col.action') }}</span>
   </div>
-  {% for name in ['summary', 'publisher', 'genres', 'status', 'cover_image', 'link', 'writers', 'pencillers', 'score', 'language', 'reading_direction'] %}
+  {% for name in ['summary', 'publisher', 'genres', 'status', 'cover_image', 'link', 'writers', 'pencillers', 'score', 'language', 'reading_direction', 'isbn', 'release_date'] %}
+    {% if (content_type | default('manga') != 'ebook' and name not in ['isbn', 'release_date']) or (content_type | default('manga') == 'ebook' and name in ['summary', 'writers', 'cover_image', 'link', 'isbn', 'release_date']) %}
     {% set fillable = name not in ['language', 'reading_direction'] %}
     <div class="rule-row" role="radiogroup" aria-labelledby="rule-{{ name }}-label">
       <span class="rule-label" id="rule-{{ name }}-label">{{ t('field.' ~ name) }}</span>
@@ -15,6 +16,8 @@
         {% endfor %}
       </span>
     </div>
+    {% else %}<input type="hidden" name="rule_{{ name }}" value="{{ rules[name] }}">
+    {% endif %}
   {% endfor %}
 </fieldset>
 <p class="help">{{ t('rules.choices_help') }}</p>

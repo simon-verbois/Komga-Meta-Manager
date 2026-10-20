@@ -8,6 +8,7 @@
     <title>{% block title %}Komga Meta Manager{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css">
     <script src="/static/vendor/htmx.min.js" defer></script>
+    <script src="/static/notifications.js" defer></script>
     <script src="/static/app.js" defer></script>
     {% block head %}{% endblock %}
   </head>
@@ -83,8 +84,9 @@
         <div class="auth-form-layout">{{ self.content() }}</div>
       </main>
     {% endif %}
-    <div id="request-feedback" class="request-feedback alert alert-error" role="alert" hidden>
-      {{ t('ui.request.error') }}
-    </div>
+    <div id="notification-region" class="notification-region" role="region" aria-label="{{ t('notifications.label') }}" data-dismiss="{{ t('notifications.dismiss') }}" data-request-error="{{ t('ui.request.error') }}"></div>
+    <template id="notification-success-icon">{{ icon('check') }}</template>
+    <template id="notification-info-icon">{{ icon('info') }}</template>
+    <template id="notification-close-icon">{{ icon('close') }}</template>
   </body>
 </html>

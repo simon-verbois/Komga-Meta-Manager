@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% from 'macros/ui.html' import page_header, field, icon with context %}
+{% from 'macros/ui.html' import page_header, field, icon, alert with context %}
 {% block title %}{{ t("account.title") }} — Komga Meta Manager{% endblock %}
 {% block heading %}{{ t("account.title") }}{% endblock %}
 {% block content %}
   <div class="settings-page narrow">
     <p class="page-intro">{{ t('ui.account.description') }}</p>
     {% if success %}
-      <div class="alert alert-success" role="status">{{ icon("check") }}{{ t("account.success") }}</div>
+      {{ alert("success", t("account.success")) }}
     {% endif %}
     {% if error %}
       <div class="alert alert-error" role="alert" tabindex="-1" data-form-error>{{ t(error) }}</div>

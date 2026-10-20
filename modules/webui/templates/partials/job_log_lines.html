@@ -1,0 +1,4 @@
+<div id="job-log-lines" hx-get="/logs/jobs/{{ job_id }}/lines" hx-trigger="refresh{% if active %}, every 1s{% endif %}" hx-swap="outerHTML" hx-sync="this:replace" hx-include="#job-log-level-filters">
+  {% include 'partials/exec_log_lines.html' %}
+</div>
+<span id="job-log-count" class="help" hx-swap-oob="true">({{ plural(log_count, 'job.lines_one', 'job.lines_many') }})</span>

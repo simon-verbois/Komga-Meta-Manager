@@ -35,29 +35,32 @@
 {% set item = row.book if is_ebook else row.series %}
 <li class="book-card" data-book-title="{{ (row.series.metadata.title ~ ' ' ~ row.title) | lower }}" data-sort-title="{{ row.title | lower }}" data-books="{{ row.series.books_count }}"
     data-absent="{{ 1 if row.absent else 0 }}" data-pending="{{ 1 if row.pending else 0 }}" data-missing="{{ 1 if row.missing_summary else 0 }}" data-locked="{{ 1 if row.locked else 0 }}" data-skipped="{{ 1 if row.skipped else 0 }}">
-  <button type="button" class="book-open" data-overwrite data-series-id="{{ row.series.id }}" data-book-id="{{ row.book.id if is_ebook else '' }}"
-          data-series-name="{{ row.series.name }}" data-skipped="{{ 1 if row.skipped else 0 }}">
+  <div class="book-cover-frame">
     <span class="book-cover">
       <span class="book-placeholder" aria-hidden="true">{{ icon('books') }}</span>
       <img loading="lazy" src="/libraries/{{ library_id }}/{{ "books" if is_ebook else "series" }}/{{ item.id }}/thumbnail" alt="" width="160" height="225">
       {% if row.pending %}<span class="cover-flag flag-pending">{{ t('libraries.flag.pending') }}</span>{% elif row.skipped %}<span class="cover-flag flag-skipped">{{ t('libraries.flag.skipped') }}</span>{% endif %}
     </span>
-    <span class="book-title">{{ row.title }}</span>
-    <span class="book-meta">
-      {% if is_ebook %}{{ row.series.metadata.title or row.series.name }}{% else %}{{ plural(row.series.books_count, 'libraries.books_one', 'libraries.books_many') }}{% endif %}
-      {% if row.missing_summary %}<span class="meta-flag">· {{ t('libraries.flag.no_summary') }}</span>{% endif %}
-      {% if row.locked %}<span class="meta-flag" title="{{ t('libraries.flag.locked') }}">· {{ icon('lock') }}<span class="sr-only">{{ t('libraries.flag.locked') }}</span></span>{% endif %}
-    </span>
-    <span class="sr-only">{{ t('manual.edit_item', title=row.title) }}</span>
-  </button>
+    <div class="book-actions">
+      {% if is_ebook %}<a class="book-action" href="/libraries/{{ library_id }}/match?series_id={{ row.series.id | urlencode }}&book_id={{ row.book.id | urlencode }}" aria-label="{{ t('matches.find_named', title=row.title) }}" title="{{ t('matches.find_named', title=row.title) }}">{{ icon('search') }}</a>{% endif %}
+      <button type="button" class="book-action" data-overwrite data-series-id="{{ row.series.id }}" data-book-id="{{ row.book.id if is_ebook else '' }}" data-series-name="{{ row.series.name }}" data-skipped="{{ 1 if row.skipped else 0 }}" aria-label="{{ t('manual.edit_item', title=row.title) }}" title="{{ t('manual.edit_item', title=row.title) }}">{{ icon('edit') }}</button>
+      <form class="book-remove" method="post" action="/libraries/{{ library_id }}/{{ 'books' if is_ebook else 'series' }}/{{ item.id }}/remove"
+          data-confirm="{{ t('libraries.remove_book_confirm' if is_ebook else 'libraries.remove_item_confirm', title=row.title) }}">
+        <button type="submit" class="book-action book-action-danger" aria-label="{{ t('libraries.remove_named', title=row.title) }}" title="{{ t('libraries.remove_named', title=row.title) }}">{{ icon('trash') }}</button>
+      </form>
+    </div>
+  </div>
+  <span class="book-title">{{ row.title }}</span>
+  <span class="book-meta">
+    {% if is_ebook %}{{ row.series.metadata.title or row.series.name }}{% else %}{{ plural(row.series.books_count, 'libraries.books_one', 'libraries.books_many') }}{% endif %}
+    {% if row.missing_summary %}<span class="meta-flag">· {{ t('libraries.flag.no_summary') }}</span>{% endif %}
+    {% if row.locked %}<span class="meta-flag" title="{{ t('libraries.flag.locked') }}">· {{ icon('lock') }}<span class="sr-only">{{ t('libraries.flag.locked') }}</span></span>{% endif %}
+  </span>
+  {% if is_ebook and row.match_status.state %}<p class="help ebook-match-state">{{ t('matches.state.' ~ row.match_status.state) }}</p>{% endif %}
   {% if row.absent %}
   <div class="missing-item">
     <p class="warning-text">{{ icon('warning') }} {{ t('libraries.flag.absent') }}</p>
     <p class="help">{{ t('libraries.absent_help') }}</p>
-    <form method="post" action="/libraries/{{ library_id }}/remove-missing" data-confirm="{{ t('libraries.remove_confirm', title=row.series.metadata.title or row.series.name) }}">
-      <input type="hidden" name="series_id" value="{{ row.series.id }}">
-      <button type="submit" class="button button-secondary button-small">{{ t('libraries.remove_local') }}</button>
-    </form>
   </div>
   {% endif %}
 </li>

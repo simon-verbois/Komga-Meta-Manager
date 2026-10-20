@@ -91,7 +91,8 @@ def push_metadata(config, stop_event=None, series_ids=None, progress_callback=No
                             if not update(item.id, patch):
                                 raise RuntimeError(f"Komga rejected {entity} {item.id}; pending changes kept")
                         if row["cover_pending"] and row["cover"] == "remove":
-                            client.remove_uploaded_series_posters(item.id)
+                            remove_cover = client.remove_uploaded_book_posters if entity == "books" else client.remove_uploaded_series_posters
+                            remove_cover(item.id)
                         elif row["cover_pending"] and row["cover"]:
                             client.upload_custom_cover(entity, item.id, base64.b64decode(row["cover"]))
                         with get_db() as conn:

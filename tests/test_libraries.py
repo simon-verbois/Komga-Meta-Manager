@@ -105,8 +105,9 @@ def test_durable_job_output_survives_live_clear_and_keeps_all_pages(library_clie
         queue._read_output(first, json.dumps({"type": "log", "level": 10, "message": f"entry-{index}"}))
     queue._read_output(second, "other job output")
     log_buffer.clear_buffer()
-    assert "entry-0" in client.get(f"/logs/jobs/{first}/lines").text
-    assert "entry-604" in client.get(f"/logs/jobs/{first}/lines?page=4").text
+    assert "entry-" not in client.get(f"/logs/jobs/{first}/lines").text
+    assert "entry-0" in client.get(f"/logs/jobs/{first}/lines?page=1&levels=DEBUG").text
+    assert "entry-604" in client.get(f"/logs/jobs/{first}/lines?page=4&levels=DEBUG").text
     assert "other job output" not in client.get(f"/logs/jobs/{first}/download").text
     download = client.get(f"/logs/jobs/{first}/download")
     assert len(download.text.splitlines()) == 605
@@ -608,13 +609,88 @@ def test_check_and_remove_missing_series(library_client):
     content = client.get('/libraries/library-1/content').text
     assert 'data-absent="1"' in content
     assert 'Missing from Komga' in content
-    assert 'data-confirm=' in content and 'Remove from KMM' in content
+    assert 'data-confirm=' in content and 'aria-label="Remove Example Manga from KMM"' in content
     assert json.loads(store.get('series', 'series-1')['pending'])['summary'] == 'My unpublished draft'
     response = client.post('/libraries/library-1/remove-missing', data={'series_id': 'series-1'})
     assert 'catalogue_notice=libraries.removed' in response.headers['location']
     assert store.get('series', 'series-1') is None
     remote.update_series_metadata.assert_not_called()
     remote.update_book_metadata.assert_not_called()
+
+
+def test_remove_local_series_keeps_other_scopes_and_never_contacts_komga(library_client):
+    from modules.local_metadata import LocalCatalogue, LocalKomgaClient
+
+    client, remote = library_client
+    client.get('/libraries/library-1/content')
+    store = LocalCatalogue(remote.base_url)
+    series = store.items('series', 'library-1')[0]
+    store.import_item('books', book('book-1'), 'library-1', series.id)
+    store.patch('series', series.id, {'summary': 'Draft'}, manual=True)
+    store.patch('books', 'book-1', {'summary': 'Book draft'}, manual=True)
+    other = series.model_copy(update={'id': 'other-series', 'library_id': 'library-2'})
+    store.import_item('series', other, 'library-2', other.id)
+    other_server = LocalCatalogue('http://other-komga')
+    other_server.import_item('series', series, 'library-1', series.id)
+    remote.reset_mock()
+
+    response = client.post(f'/libraries/library-1/series/{series.id}/remove')
+
+    assert 'catalogue_notice=libraries.item_removed' in response.headers['location']
+    assert store.get('series', series.id) is None
+    assert store.get('books', 'book-1') is None
+    assert store.get('series', other.id) is not None
+    assert other_server.get('series', series.id) is not None
+    assert store.pending_counts() == {}
+    assert not remote.mock_calls
+    assert 'data-book-title=' not in client.get('/libraries/library-1/content').text
+    remote.get_series_in_library.assert_not_called()
+    # An intentional Fetch can reimport an object still in Komga.
+    assert LocalKomgaClient(remote, refresh=True).get_series_in_library('library-1', 'Manga')
+    assert store.get('series', series.id) is not None
+
+
+def test_remove_local_book_preserves_parent_and_siblings(library_client):
+    from modules.local_metadata import LocalCatalogue, LocalKomgaClient
+
+    client, remote = library_client
+    client.get('/libraries/library-1/content')
+    store = LocalCatalogue(remote.base_url)
+    for identifier in ('book-1', 'book-2'):
+        store.import_item('books', book(identifier), 'library-1', 'series-1')
+    remote.reset_mock()
+    response = client.post('/libraries/library-1/books/book-1/remove')
+    assert 'catalogue_notice=libraries.item_removed' in response.headers['location']
+    assert store.get('books', 'book-1') is None
+    assert store.get('books', 'book-2') is not None
+    assert store.get('series', 'series-1') is not None
+    client.post('/libraries/library-1/books/book-2/remove')
+    local = LocalKomgaClient(remote, refresh=False)
+    local.get_series_in_library('library-1', 'Manga')
+    assert local.get_books_in_series('series-1', 'Example Manga') == []
+    assert not remote.mock_calls
+
+
+def test_remove_local_rejects_wrong_library_unknown_item_and_unauthenticated(library_client):
+    from modules.local_metadata import LocalCatalogue
+
+    client, remote = library_client
+    content = client.get('/libraries/library-1/content').text
+    assert '/libraries/library-1/series/series-1/remove' in content
+    assert 'Komga metadata, books and files will NOT be changed or deleted' in content
+    for path in ('library-2/series/series-1', 'library-1/series/unknown'):
+        response = client.post(f'/libraries/{path}/remove')
+        assert 'message=libraries.remove_item_unavailable' in response.headers['location']
+    assert LocalCatalogue(remote.base_url).get('series', 'series-1') is not None
+    client.cookies.clear()
+    assert client.post('/libraries/library-1/series/series-1/remove').headers['location'] == '/login'
+
+
+def test_remove_local_database_failure_shows_actionable_error(library_client):
+    client, _ = library_client
+    with patch('modules.local_metadata.LocalCatalogue.remove_item', side_effect=RuntimeError('Private error')):
+        response = client.post('/libraries/library-1/series/series-1/remove')
+    assert 'message=libraries.remove_error' in response.headers['location']
 
 
 def test_remove_missing_rechecks_remote_and_keeps_edits_on_failure(library_client):

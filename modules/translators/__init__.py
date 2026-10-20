@@ -32,8 +32,9 @@ def get_translator(provider: str, **kwargs: Any) -> Optional[Translator]:
         if 'config' not in kwargs:
             logger.error("DeepL config is required but was not provided.")
             return None
-        translator = DeepLTranslator(config=kwargs['config'])
-        return translator if translator.translator is not None else None
+        fallback_enabled = kwargs.get('fallback_to_google', True)
+        translator = DeepLTranslator(config=kwargs['config'], fallback_to_google=fallback_enabled)
+        return translator if translator.translator is not None or fallback_enabled else None
     else:
         logger.warning(f"Unknown translation provider: '{provider}'. Translation will be disabled.")
         return None

@@ -374,6 +374,32 @@ class KomgaClient:
 
         raise KomgaAPIError(f"Failed to update metadata for book {book_id}")
 
+    def get_book_thumbnails(self, book_id: str) -> list[dict]:
+        """Read book thumbnails without treating book IDs as series IDs."""
+        result = self._make_request("GET", f"books/{book_id}/thumbnails")
+        if not isinstance(result, list):
+            raise KomgaAPIError("Komga returned invalid book thumbnails")
+        return result
+
+    def update_book_poster(self, book_id: str, image_url: str, overwrite_existing=False, dry_run=False) -> str:
+        """Preserve an existing custom book cover unless replacement was requested."""
+        thumbnails = self.get_book_thumbnails(book_id)
+        if not overwrite_existing and any(item.get("type", "").upper() == "USER_UPLOADED" for item in thumbnails):
+            return "preserved"
+        content, _, _ = self._download_cover_image(image_url)
+        if dry_run:
+            return "would_upload"
+        self.upload_custom_cover("books", book_id, content)
+        return "uploaded"
+
+    def remove_uploaded_book_posters(self, book_id: str, dry_run=False) -> int:
+        """Remove only custom book covers when explicitly requested."""
+        uploaded = [item for item in self.get_book_thumbnails(book_id) if item.get("type", "").upper() == "USER_UPLOADED"]
+        if not dry_run:
+            for item in uploaded:
+                self._make_request("DELETE", f"books/{book_id}/thumbnails/{item['id']}")
+        return len(uploaded)
+
     def get_series_thumbnails(self, series_id: str) -> List[KomgaThumbnail]:
         """
         Fetch all thumbnails for a specific series.

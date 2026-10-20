@@ -210,15 +210,15 @@ def test_rule_choices_and_processing_patch_round_trip():
 def test_sources_patch_uses_form_order_as_priority():
     existing = [{"name": "anilist", "priority": 1, "min_score": 60}, {"name": "mangadex", "priority": 2},
                 {"name": "mangaupdates", "priority": 3}]
-    form = FormData([("source_order", "mangaupdates"), ("source_order", "anilist"), ("source_order", "unknown"),
+    form = FormData([("source_order", "mangaupdates"), ("source_order", "anilist"),
                      ("mangaupdates_enabled", "1"), ("anilist_allow_adult", "1")])
     sources = sources_patch(form, existing)
     assert [(s["name"], s["priority"], s["enabled"]) for s in sources] == [
-        ("mangaupdates", 1, True), ("anilist", 2, False), ("mangadex", 3, False),
+        ("mangaupdates", 1, True), ("anilist", 2, False),
     ]
     assert sources[1]["min_score"] == 60 and sources[1]["allow_adult"] is True
-    assert [s["display"] for s in ordered_sources(sources)] == ["MangaUpdates", "AniList", "MangaDex"]
-    assert [s["name"] for s in ordered_sources([])] == ["anilist", "mangadex", "mangaupdates"]
+    assert [s["display"] for s in ordered_sources(sources)] == ["MangaUpdates", "AniList"]
+    assert ordered_sources([]) == []
 
 
 def test_audit_text_is_readable():
