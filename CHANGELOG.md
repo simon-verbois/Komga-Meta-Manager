@@ -13,6 +13,14 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+### Added
+- Add a responsive GitHub Pages presentation site in English, French, Dutch, German and Spanish, with complete static language pages, screenshot previews, Docker setup and a prominent introduction to Inkora.
+- Add reproducible desktop and mobile screenshots of the real interface using an isolated fictional catalogue, original demonstration covers and blocked external requests.
+- Add an allowlisted static-site builder, local browser verification and a manually triggered GitHub Pages workflow.
+
+### Changed
+- Redesign the README around Fetch → Review → Publish, illustrated features and a concise Docker quick start; retain detailed behavior and development instructions in dedicated guides and link both the Inkora website and repository.
+
 ## [2026.43.2] — 2026-10-21
 
 ### Maintenance

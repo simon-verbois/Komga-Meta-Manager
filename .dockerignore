@@ -10,3 +10,8 @@ tests
 compose*.yml
 requirements-dev.*
 README.md
+docs
+artifacts
+.tooling
+.github
+CONTRIBUTING.md
