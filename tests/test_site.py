@@ -5,7 +5,12 @@ import shutil
 
 import pytest
 
-from scripts.build_site import FILES, LANGUAGES, ROOT, build, validate_site
+from scripts.build_site import FILES, LANGUAGES, ROOT, build, check_generated, generate, validate_site
+
+
+def test_committed_docs_can_be_published_directly_without_missing_languages():
+    check_generated()
+    validate_site(ROOT / "docs")
 
 
 def test_site_build_has_only_public_assets_and_five_complete_languages(tmp_path):
@@ -57,6 +62,29 @@ def test_site_build_rejects_missing_translation_before_writing(tmp_path):
     with pytest.raises(ValueError, match="Missing fr translation: Skip to content"):
         build(destination, source)
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("condition", ["missing", "stale", "template"])
+def test_site_build_rejects_outdated_pages_until_regenerated(tmp_path, condition):
+    source = tmp_path / "source"
+    shutil.copytree(ROOT / "docs", source)
+    page = source / "fr/index.html"
+    if condition == "missing":
+        page.unlink()
+    elif condition == "stale":
+        page.write_text("Outdated French page")
+    else:
+        template = source / "site-template.html"
+        template.write_text(template.read_text().replace("<body>", '<body class="updated">'))
+    destination = tmp_path / "site"
+    with pytest.raises(ValueError, match="Stale localized page"):
+        build(destination, source)
+    assert not destination.exists()
+    generate(source)
+    check_generated(source)
+    validate_site(source)
+    build(destination, source)
+    assert (destination / "fr/index.html").read_text() == page.read_text()
 
 
 @pytest.mark.parametrize("target", ["/screenshots/libraries.png", "missing.png", "#missing-section", "../outside.txt"])

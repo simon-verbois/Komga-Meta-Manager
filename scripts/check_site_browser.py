@@ -71,6 +71,18 @@ def verify(site: Path, output: Path) -> None:
                         page.screenshot(
                             path=str(output / f"{language}-{width}.png"), full_page=True, animations="disabled"
                         )
+                        # Exercise every language link under a project prefix on mobile and desktop.
+                        for target in LANGUAGES:
+                            picker = page.locator(".language-picker")
+                            picker.locator("summary").click()
+                            picker.locator(f'a[hreflang="{target}"]').click()
+                            expected_url = base if target == "en" else base + target + "/"
+                            expect(page).to_have_url(expected_url)
+                            expect(page.locator("html")).to_have_attribute("lang", target)
+                            expect(page.locator(".language-picker [aria-current=page]")).to_have_attribute(
+                                "hreflang", target
+                            )
+                            assert page.goto(url).status == 200
                     reports.append({"language": language, "width": width, "layout": "pass", "images": "pass"})
 
                 tabs = page.get_by_role("tab")
@@ -133,11 +145,14 @@ def verify(site: Path, output: Path) -> None:
                 page.goto(url)
                 expect(page.locator(".gallery-controls")).not_to_be_visible()
                 expect(page.locator("[data-gallery-panel]:visible")).to_have_count(4)
-                picker = page.locator(".language-picker")
-                picker.locator("summary").click()
-                target = "fr" if language == "en" else "en"
-                picker.locator(f'a[hreflang="{target}"]').click()
-                expect(page.locator("html")).to_have_attribute("lang", target)
+                for target in LANGUAGES:
+                    picker = page.locator(".language-picker")
+                    picker.locator("summary").click()
+                    picker.locator(f'a[hreflang="{target}"]').click()
+                    expected_url = base if target == "en" else base + target + "/"
+                    expect(page).to_have_url(expected_url)
+                    expect(page.locator("html")).to_have_attribute("lang", target)
+                    assert page.goto(url).status == 200
                 image_link = page.locator(".hero-figure [data-preview]")
                 image_link.click()
                 assert page.url.endswith("/screenshots/libraries.png")
@@ -150,6 +165,7 @@ def verify(site: Path, output: Path) -> None:
                 {
                     "responsive_cases": reports,
                     "languages": list(LANGUAGES),
+                    "language_navigation": "all language pairs on mobile and desktop; also without JavaScript",
                     "javascript_disabled": "pass",
                     "keyboard_and_dialog": "pass",
                     "clipboard_success_and_failure": "pass",

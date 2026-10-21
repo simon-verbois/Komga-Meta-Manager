@@ -7,7 +7,8 @@ screenshot dialog, keyboard-accessible gallery tabs and a Compose copy button.
 
 ## Structure
 
-- `docs/index.html`: English source, page structure and accessible image descriptions.
+- `docs/site-template.html`: English source, page structure and accessible image descriptions.
+- `docs/index.html`, `docs/{fr,nl,de,es}/index.html`: generated, committed static language pages.
 - `docs/styles.css`, `docs/site.js`, `docs/favicon.svg`: local website resources.
 - `docs/locales/{fr,nl,de,es}.json`: complete website translations, keyed by English source copy.
 - `docs/screenshots/`: nine real-interface captures with entirely fictional content.
@@ -18,7 +19,9 @@ screenshot dialog, keyboard-accessible gallery tabs and a Compose copy button.
 - `scripts/check_site_browser.py`: local Chromium verification and visual evidence.
 - `.github/workflows/pages.yml`: manual, default-branch GitHub Pages deployment.
 
-The builder copies only explicitly listed public website resources. User guides,
+Like Inkora, the site commits every language page so publishing `docs` directly
+also works. The builder checks that those pages match the template and translations,
+then copies only explicitly listed public website resources. User guides,
 translation source catalogues, application code, databases and configuration files
 are not included in the website artifact. It refuses nonempty output directories.
 
@@ -33,7 +36,7 @@ python3 -m http.server 4173 --bind 127.0.0.1 --directory build
 
 Open **http://127.0.0.1:4173/site/**. For another build, choose a fresh destination,
 for example `python3 scripts/build_site.py --output build/site-review-2`. Do not
-edit the generated output.
+edit the generated output or the committed language pages directly.
 
 The generated site contains:
 
@@ -54,9 +57,18 @@ captions make this explicit in the translated pages.
 
 ## Translation maintenance
 
-Edit English copy in `docs/index.html`, then update the corresponding keys in all
-four JSON catalogues in the same change. Missing translations fail the build
-before it creates an artifact. Preserve brand names, URLs and installation code.
+Edit English copy in `docs/site-template.html`, then update the corresponding keys
+in all four JSON catalogues in the same change. Regenerate and check the committed
+pages before committing them:
+
+```bash
+python3 scripts/build_site.py --generate
+python3 scripts/build_site.py --check
+```
+
+Missing translations fail generation before any page is written. Missing or
+outdated pages fail the build before it creates an artifact. Preserve brand names,
+URLs and installation code.
 Copy-button feedback is localized in `docs/site.js`; keep all five variants in sync.
 Review each language in the browser, including longer French/German headings and
 the narrow-screen navigation. The English README links to the English user guide.
@@ -99,6 +111,7 @@ After building into a fresh output directory:
 
 ```bash
 .tooling/site-qa/bin/python -m scripts.check_site_browser
+.tooling/site-qa/bin/python -m scripts.check_site_browser --site docs --output artifacts/site-qa-docs
 python -m pytest tests/test_site.py
 ruff check scripts/build_site.py scripts/capture_screenshots.py scripts/check_site_browser.py tests/test_site.py
 ```
@@ -106,7 +119,9 @@ ruff check scripts/build_site.py scripts/capture_screenshots.py scripts/check_si
 Browser checks cover all five languages at 360, 390, 768, 1024 and 1440 pixels,
 local image loading, horizontal overflow, enlarged text, tab keyboard navigation,
 screenshot dialog dismissal and focus restoration, clipboard success/failure,
-native FAQ/language controls, and all five language journeys without JavaScript.
+native FAQ/language controls, and every pair of language links on mobile and
+desktop, plus all language pairs without JavaScript. Run them against both the
+artifact and committed `docs` to cover both publication modes under a project prefix.
 Any external browser request fails verification. Reports and full-page website
 captures stay in ignored `artifacts/site-qa/`; they are not public-site assets.
 These checks supplement visual inspection, not exhaustive assistive-technology QA.
@@ -122,7 +137,12 @@ behavior. Preparation and local verification do not publish anything.
 Expected project URL after publication:
 `https://simon-verbois.github.io/komga-meta-manager/`.
 
-Use the Actions build rather than publishing raw `/docs`: `/docs` contains the
-English source and translation catalogues, while **the builder generates the four
-other language pages**. No GitHub Pages setting or remote content is changed by
-the local scripts. See GitHub's official [custom workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+Direct branch publication also works: choose **Deploy from a branch**, the default
+branch and **/docs**. All five language pages are committed there, with relative
+links that preserve the GitHub project prefix. Regenerate them whenever the
+template or translations change. The Actions artifact remains the recommended
+option because it excludes source templates, catalogues and user guides, and
+checks generated pages before deployment.
+
+No GitHub Pages setting or remote content is changed by the local scripts. See
+GitHub's official [custom workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).

@@ -188,6 +188,40 @@ def validate_site(destination: Path) -> None:
                     raise ValueError(f"Missing fragment: {target}")
 
 
+def render_pages(source: Path) -> dict[str, str]:
+    """Resolve every translation from the template before writing any pages."""
+    template = (source / "site-template.html").read_text(encoding="utf-8")
+    pages = {}
+    for language in LANGUAGES:
+        catalogue = (
+            {}
+            if language == "en"
+            else json.loads((source / "locales" / f"{language}.json").read_text(encoding="utf-8"))
+        )
+        page = LocalizedPage(language, catalogue)
+        page.feed(template)
+        name = "index.html" if language == "en" else f"{language}/index.html"
+        pages[name] = "".join(page.output)
+    return pages
+
+
+def generate(source: Path = ROOT / "docs") -> None:
+    """Update committed pages so publishing docs directly includes every language."""
+    for name, content in render_pages(source).items():
+        target = source / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    print(f"Generated {len(LANGUAGES)} static language pages in {source}")
+
+
+def check_generated(source: Path = ROOT / "docs") -> None:
+    """Reject missing or stale committed pages before publishing either site form."""
+    for name, content in render_pages(source).items():
+        target = source / name
+        if not target.is_file() or target.read_text(encoding="utf-8") != content:
+            raise ValueError(f"Stale localized page: {name}; run python3 scripts/build_site.py --generate")
+
+
 def build(destination: Path, source: Path = ROOT / "docs") -> None:
     """Assemble only reviewed public assets; never overwrite an existing output."""
     destination, source = destination.resolve(), source.resolve()
@@ -200,33 +234,32 @@ def build(destination: Path, source: Path = ROOT / "docs") -> None:
         raise ValueError("Destination must be outside the source directory and cannot contain the repository")
     if destination.exists() and any(destination.iterdir()):
         raise ValueError("Destination must be empty; choose a fresh build directory")
-    template = (source / "index.html").read_text(encoding="utf-8")
-    # Resolve every translation before creating the artifact.
-    pages = {}
-    for language in LANGUAGES:
-        catalogue = (
-            {}
-            if language == "en"
-            else json.loads((source / "locales" / f"{language}.json").read_text(encoding="utf-8"))
-        )
-        page = LocalizedPage(language, catalogue)
-        page.feed(template)
-        pages[language] = "".join(page.output)
+    check_generated(source)
     destination.mkdir(parents=True, exist_ok=True)
-    for name in FILES:
+    pages = ("index.html", *(f"{language}/index.html" for language in LANGUAGES if language != "en"))
+    for name in (*FILES, *pages):
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, target)
-    for language, content in pages.items():
-        target = destination / ("index.html" if language == "en" else f"{language}/index.html")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
     validate_site(destination)
     print(f"Built and checked {len(pages)} languages in {destination}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--generate", action="store_true", help="Update committed docs language pages")
+    mode.add_argument("--check", action="store_true", help="Check committed language pages and local links")
     parser.add_argument("--output", type=Path, default=ROOT / "build/site")
     args = parser.parse_args()
-    build(args.output)
+    try:
+        if args.generate:
+            generate()
+        elif args.check:
+            check_generated()
+            validate_site(ROOT / "docs")
+            print("Five static language pages and local references are current")
+        else:
+            build(args.output)
+    except (OSError, ValueError) as error:
+        parser.exit(1, f"Website: {error}\n")
