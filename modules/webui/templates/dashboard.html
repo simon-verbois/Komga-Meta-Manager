@@ -3,6 +3,16 @@
 {% block title %}{{ t("nav.home") }} — Komga Meta Manager{% endblock %}
 {% block heading %}{{ t("nav.home") }}{% endblock %}
 {% block content %}
+  <section class="panel tour-welcome" data-tour-welcome hidden aria-labelledby="tour-welcome-title">
+    <div>
+      <h2 id="tour-welcome-title">{{ t('tour.welcome.title') }}</h2>
+      <p class="muted">{{ t('tour.welcome.body') }}</p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-secondary" data-tour-start>{{ icon('info') }}{{ t('tour.open') }}</button>
+      <button type="button" class="button button-icon" data-tour-dismiss aria-label="{{ t('tour.welcome.dismiss') }}">{{ icon('close') }}</button>
+    </div>
+  </section>
   {% if queued %}{{ alert('success', t('home.queued', id=queued)) }}{% endif %}
   {% if message %}{{ alert('error', t(message)) }}{% endif %}
   {% if connection_error %}

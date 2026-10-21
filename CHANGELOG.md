@@ -14,6 +14,7 @@ section above it. VERSION and released headings are managed by that script, not 
 ## [Unreleased]
 
 ### Added
+- Add an eight-step guided tour covering connection, library scope, metadata rules, Fetch → Review → Publish, automation and job results, with page links, keyboard navigation and a dismissible Home introduction.
 - Fall back from DeepL to Google Translate by default, with an External services switch, separate caches, immediate handling of exhausted quota, and original-text preservation when both services fail.
 - Centralize Google Books credentials and translation/DeepL settings in External services, preserve existing keys, and rename the default metadata tab to Metadata Defaults. Keep this page focused on configurable services.
 - Show action notifications across the app as dismissible bottom-right overlays, with automatic expiry paused on hover, keyboard focus or hidden tabs; keep validation errors beside their forms.

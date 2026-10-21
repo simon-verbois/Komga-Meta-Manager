@@ -1,0 +1,36 @@
+<dialog id="guided-tour" class="guided-tour" aria-labelledby="tour-title" aria-describedby="tour-description"
+        data-progress="{{ t('tour.progress') }}" data-next="{{ t('tour.next') }}" data-finish="{{ t('tour.finish') }}">
+  <div class="tour-header">
+    <span class="eyebrow">{{ t('tour.open') }}</span>
+    <button type="button" class="button button-icon" data-tour-close aria-label="{{ t('tour.close') }}">{{ icon('close') }}</button>
+  </div>
+  <p id="tour-progress" class="help" aria-live="polite" aria-atomic="true"></p>
+  <div class="tour-track" aria-hidden="true"><span></span></div>
+  {% for key, destination, location in [
+    ('overview', '/', 'nav.home'),
+    ('connection', '/settings?tab=connection', 'settings.connection'),
+    ('libraries', '/libraries', 'nav.libraries'),
+    ('rules', '/settings?tab=defaults', 'settings.defaults'),
+    ('fetch', '/', 'nav.home'),
+    ('review', '/review', 'nav.review'),
+    ('automation', '/settings?tab=automation', 'settings.automation'),
+    ('activity', '/logs', 'nav.activity')
+  ] %}
+    <section data-tour-step hidden>
+      <p class="tour-location">{{ icon('arrow') }}{{ t(location) }}</p>
+      <h2 tabindex="-1">{{ t('tour.' ~ key ~ '.title') }}</h2>
+      <p class="tour-description">{{ t('tour.' ~ key ~ '.body') }}</p>
+      <p class="tour-tip">{{ icon('info') }}<span>{{ t('tour.' ~ key ~ '.tip') }}</span></p>
+      {% if configured is not defined or configured or key == 'connection' %}
+        <a class="text-link tour-destination" href="{{ destination }}">{{ t('tour.go', page=t(location)) }}{{ icon('arrow') }}</a>
+      {% else %}
+        <p class="help tour-destination">{{ t('tour.connection_first') }}</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+  <div class="tour-footer">
+    <button type="button" class="button button-secondary" data-tour-back>{{ t('tour.back') }}</button>
+    <button type="button" class="button button-primary" data-tour-next>{{ t('tour.next') }}{{ icon('arrow') }}</button>
+  </div>
+  <p class="help tour-reopen">{{ t('tour.reopen') }}</p>
+</dialog>

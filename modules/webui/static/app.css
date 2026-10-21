@@ -2165,3 +2165,28 @@ input[type="radio"]:not([type="checkbox"]):not([type="hidden"]) { width: 18px; h
   .notification-region { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); width: calc(100vw - 24px); }
 }
 @media (prefers-reduced-motion: reduce) { .notification-region .toast { animation: none; } }
+
+/* Guided tour: native modal focus management and local, optional onboarding. */
+.sidebar-bottom [data-tour-start] { width: 100%; border: 0; background: transparent; text-align: left; }
+.sidebar-bottom [data-tour-start]:hover { background: var(--soft); }
+.tour-welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.tour-welcome .button-row { flex-shrink: 0; }
+body.tour-open { overflow: hidden; }
+dialog.guided-tour { width: min(620px, calc(100% - 32px)); padding: 28px; }
+.tour-header, .tour-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guided-tour .button { min-height: 44px; }
+.tour-track { height: 4px; border-radius: 4px; background: var(--line); margin: 12px 0 24px; overflow: hidden; }
+.tour-track span { display: block; height: 100%; background: var(--accent); }
+.tour-location { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: .875rem; font-weight: 650; margin-bottom: 12px; }
+.guided-tour h2 { font-size: 1.5rem; margin-bottom: 16px; }
+.tour-description { line-height: 1.7; }
+.tour-tip { display: flex; align-items: flex-start; gap: 10px; background: var(--soft); border-radius: 10px; padding: 16px; margin-top: 20px; font-size: .875rem; }
+.tour-tip .icon { flex-shrink: 0; margin-top: 3px; }
+.tour-destination { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin: 12px 0; }
+.tour-footer { border-top: 1px solid var(--line); padding-top: 20px; }
+.tour-reopen { margin-top: 16px; }
+@media (max-width: 767px) {
+  .tour-welcome { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .tour-welcome .button-row { width: 100%; justify-content: space-between; }
+  dialog.guided-tour { padding: 20px; }
+}
