@@ -13,6 +13,8 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+## [2026.43.4] — 2026-10-21
+
 ### Fixed
 - Prevent GitHub Pages 404 errors when switching website languages by committing all five static language pages, supporting direct publication from `docs` as well as the Actions build, and rejecting missing or outdated generated pages before deployment.
 
