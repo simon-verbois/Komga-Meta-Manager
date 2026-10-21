@@ -13,6 +13,8 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+## [2026.43.3] — 2026-10-21
+
 ### Added
 - Add a responsive GitHub Pages presentation site in English, French, Dutch, German and Spanish, with complete static language pages, screenshot previews, Docker setup and a prominent introduction to Inkora.
 - Add reproducible desktop and mobile screenshots of the real interface using an isolated fictional catalogue, original demonstration covers and blocked external requests.
