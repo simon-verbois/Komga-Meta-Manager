@@ -13,6 +13,9 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+### Maintenance
+- Upgrade certifi to 2026.10.19 in the application and development dependency locks to fix PYSEC-2026-4320 and restore the release security audit.
+
 ## [2026.43.1] — 2026-10-21
 
 ### Added
