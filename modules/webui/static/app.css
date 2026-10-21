@@ -2167,8 +2167,7 @@ input[type="radio"]:not([type="checkbox"]):not([type="hidden"]) { width: 18px; h
 @media (prefers-reduced-motion: reduce) { .notification-region .toast { animation: none; } }
 
 /* Guided tour: native modal focus management and local, optional onboarding. */
-.sidebar-bottom [data-tour-start] { width: 100%; border: 0; background: transparent; text-align: left; }
-.sidebar-bottom [data-tour-start]:hover { background: var(--soft); }
+.tour-topbar-button { min-width: 44px; min-height: 44px; }
 .tour-welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .tour-welcome .button-row { flex-shrink: 0; }
 body.tour-open { overflow: hidden; }
@@ -2189,4 +2188,8 @@ dialog.guided-tour { width: min(620px, calc(100% - 32px)); padding: 28px; }
   .tour-welcome { align-items: flex-start; flex-direction: column; gap: 12px; }
   .tour-welcome .button-row { width: 100%; justify-content: space-between; }
   dialog.guided-tour { padding: 20px; }
+}
+@media (max-width: 540px) {
+  .tour-topbar-button span { display: none; }
+  .tour-topbar-button { padding: 10px; }
 }

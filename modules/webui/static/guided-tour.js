@@ -30,15 +30,19 @@
     dialog.scrollTop = 0;
   }
 
+  function openTour(button) {
+    opener = button;
+    index = 0;
+    showStep();
+    dialog.showModal();
+    document.body.classList.add("tour-open");
+    steps[index].querySelector("h2").focus({ preventScroll: true });
+    // Remember immediately, including when a page link is used before closing.
+    dismissWelcome();
+  }
+
   document.querySelectorAll("[data-tour-start]").forEach((button) => {
-    button.addEventListener("click", () => {
-      opener = button;
-      index = 0;
-      showStep();
-      dialog.showModal();
-      document.body.classList.add("tour-open");
-      steps[index].querySelector("h2").focus({ preventScroll: true });
-    });
+    button.addEventListener("click", () => openTour(button));
   });
   back.addEventListener("click", () => { if (index > 0) { index--; showStep(); } });
   next.addEventListener("click", () => {
@@ -63,9 +67,9 @@
   dialog.addEventListener("close", () => {
     document.body.classList.remove("tour-open");
     dismissWelcome();
-    // The welcome card may now be hidden; the navigation entry stays available.
+    // The welcome card may now be hidden; the topbar entry stays available.
     const target = opener?.closest("[data-tour-welcome]")
-      ? document.querySelector(".sidebar [data-tour-start]") : opener;
+      ? document.querySelector(".topbar [data-tour-start]") : opener;
     const menu = document.getElementById("menu-toggle");
     (target?.getClientRects().length ? target : menu)?.focus();
   });
@@ -73,9 +77,12 @@
     dismissWelcome();
     document.getElementById("main-content").focus();
   });
+  let seen = false;
   try {
-    if (welcome) welcome.hidden = localStorage.getItem(storageKey) === "seen";
+    seen = localStorage.getItem(storageKey) === "seen";
   } catch {
-    if (welcome) welcome.hidden = false;
+    // The first-visit introduction still works when browser storage is blocked.
   }
+  if (welcome) welcome.hidden = seen;
+  if (!seen) openTour(document.querySelector(".topbar [data-tour-start]"));
 })();

@@ -42,6 +42,7 @@ section above it. VERSION and released headings are managed by that script, not 
 - Start and stop the local development environment with start-kmm.sh and stop-kmm.sh.
 
 ### Changed
+- Open the guided tour automatically on the first signed-in visit in each browser, remember it as soon as it opens, and move its persistent button to the top bar beside the account menu.
 
 - Refresh job logs every second while active, follow the latest output without resetting controls, and filter levels with DEBUG hidden by default; keep every message in storage and full downloads.
 

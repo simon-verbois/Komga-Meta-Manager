@@ -39,7 +39,6 @@
               {{ nav_link('/settings', t('nav.settings'), 'processing') }}
             </nav>
             <div class="sidebar-bottom">
-              <button type="button" class="nav-item" data-tour-start>{{ icon('info') }}{{ t('tour.open') }}</button>
               <a class="version" href="https://github.com/simon-verbois/Komga-Meta-Manager" target="_blank" rel="noopener noreferrer">{{ app_version }}</a>
             </div>
           </div>
@@ -52,6 +51,8 @@
             </div>
             <div class="topbar-actions">
               {% block actions %}{% endblock %}
+              <button type="button" class="button button-secondary tour-topbar-button" data-tour-start
+                      aria-label="{{ t('tour.open') }}" title="{{ t('tour.open') }}">{{ icon('info') }}<span>{{ t('tour.open') }}</span></button>
               <details class="user-menu">
                 <summary aria-label="{{ t('ui.account_menu') }}">{{ icon('user') }}<span class="user-name">{{ username | default('') }}</span></summary>
                 <div class="user-menu-items">
