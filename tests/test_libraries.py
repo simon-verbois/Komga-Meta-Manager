@@ -506,7 +506,7 @@ def test_library_content_empty_connection_and_navigation(library_client):
     assert response.status_code == 200
     assert 'id="overwrite-dialog"' in response.text
     assert 'class="workspace-footer"' not in response.text
-    assert "github.com/simon-verbois/Komga-Meta-Manager" in response.text
+    assert "github.com/simon-verbois/komga-meta-manager" in response.text
     assert 'aria-current="page"' in response.text.split('class="pill-nav"', 1)[1]
     content = client.get("/libraries/library-1/content")
     assert 'data-series-id="series-1"' in content.text

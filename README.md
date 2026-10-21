@@ -6,7 +6,7 @@
 <p align="center">Thoughtful metadata management for your Komga collection.<br>Fetch the missing details. Review every change. Publish when you are ready.</p>
 <p align="center">
   <a href="#quick-start">Get started</a> ·
-  <a href="https://simon-verbois.github.io/Komga-Meta-Manager/">Website</a> ·
+  <a href="https://simon-verbois.github.io/komga-meta-manager/">Website</a> ·
   <a href="docs/USAGE.md">User guide</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>

@@ -120,7 +120,7 @@ workflow builds `build/site`, uploads only that artifact and deploys through the
 behavior. Preparation and local verification do not publish anything.
 
 Expected project URL after publication:
-`https://simon-verbois.github.io/Komga-Meta-Manager/`.
+`https://simon-verbois.github.io/komga-meta-manager/`.
 
 Use the Actions build rather than publishing raw `/docs`: `/docs` contains the
 English source and translation catalogues, while **the builder generates the four

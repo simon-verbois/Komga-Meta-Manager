@@ -13,6 +13,9 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+### Maintenance
+- Update GitHub repository links, the GitHub Pages address, release mirror destination and container source labels to use the renamed lowercase public repository `simon-verbois/komga-meta-manager`.
+
 ## [2026.43.3] — 2026-10-21
 
 ### Added
