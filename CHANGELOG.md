@@ -13,6 +13,8 @@ section above it. VERSION and released headings are managed by that script, not 
 
 ## [Unreleased]
 
+## [2026.43.1] — 2026-10-21
+
 ### Added
 - Add an eight-step guided tour covering connection, library scope, metadata rules, Fetch → Review → Publish, automation and job results, with page links, keyboard navigation and a dismissible Home introduction.
 - Fall back from DeepL to Google Translate by default, with an External services switch, separate caches, immediate handling of exhausted quota, and original-text preservation when both services fail.
